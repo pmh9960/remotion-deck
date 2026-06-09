@@ -33,7 +33,7 @@
     "example:build": "vite build example",
     "smoke": "node scripts/smoke.mjs",
     "test": "npm run build && npm run smoke",
-    "prepublishOnly": "npm run build"
+    "prepare": "npm run build"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"
