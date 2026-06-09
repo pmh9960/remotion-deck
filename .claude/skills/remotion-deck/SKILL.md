@@ -1,146 +1,103 @@
 ---
 name: remotion-deck
-description: Create and edit Remotion-based presentation decks with the remotion-deck library — animated slides (useCurrentFrame/spring), arrow-key navigation, and PDF export. Use when the user wants to build a slide deck or presentation with Remotion, add or restyle slides, run the deck in the browser, or export it to PDF.
+description: Author and edit presentation decks with remotion-deck — a JSON-driven slide deck with a visual editor, animations, and PDF export. Use when the user wants to make a slide deck or presentation, generate slides from notes/an outline, add or restyle slides, tidy a deck's layout, run the editor, or export to PDF. The deck is a single deck.json that both the user (visual editor) and you (this skill) edit.
 ---
 
 # remotion-deck
 
-Build presentation decks where each slide is a Remotion composition. The library wraps
-Remotion's public API: a `<SlideDeck>` React surface for presenting, `registerDeck` to expose
-slides as compositions, and `renderDeckToPdf` to export. Remotion is a peerDependency, so the
-deck tracks whatever Remotion version the project has installed.
+A deck is one **`deck.json`** file. The `remotion-deck` CLI renders it, plays it, edits it
+visually, and exports a PDF. You and the user edit the *same* file: you write/patch `deck.json`,
+the user fine-tunes in the visual editor (`remotion-deck dev`). Slides are data, not code, so you
+can generate a whole talk by writing JSON.
 
-## When to use this skill
+## CLI
 
-- "Make a presentation / slide deck with Remotion"
-- "Add a slide", "animate this slide", "restyle the title slide"
-- "Run the deck", "export the deck to PDF"
+| Command | What it does |
+|---|---|
+| `npx remotion-deck init` | Scaffold `deck.json` + `package.json` in an empty folder |
+| `npx remotion-deck dev` | Open the visual editor (silent; `--open` to auto-open a tab) |
+| `npx remotion-deck present` | Play the deck full-screen |
+| `npx remotion-deck pdf` | Render `deck.json` → `presentation.pdf` (one page per slide) |
+| `npx remotion-deck doctor` | Tidy layout: align edges, snap to grid, trim whitespace (`--dry` to preview) |
 
-## Project shape
+After writing or editing `deck.json`, run `npx remotion-deck doctor` to auto-align, then
+`npx remotion-deck pdf` if the user wants a PDF.
 
-A consumer project looks like this:
+## deck.json schema
 
-```
-my-deck/
-  package.json        # deps: remotion-deck remotion @remotion/player
-                      #       dev: @remotion/bundler @remotion/renderer vite @vitejs/plugin-react
-  index.html
-  src/
-    main.tsx          # ReactDOM root rendering <SlideDeck slides={SLIDES} config={DECK} />
-    deck.tsx          # exports SLIDES: SlideDef[] and DECK: Partial<DeckConfig>
-    slides/           # one component per slide (Remotion components)
-    remotion-entry.ts # registerDeck(SLIDES, DECK)  -> used only for PDF export
-  scripts/export-pdf.mjs  # calls renderDeckToPdf({ entryPoint, output })
-```
-
-If the project does not exist yet, scaffold it with Vite (react-ts) and add the deps above.
-
-## The slide contract
-
-A slide is `{ id: string; component: React.ComponentType; durationInFrames: number }`.
-`durationInFrames` is the length of the slide's intro animation (the deck plays it from frame 0
-on entry). Slides are plain Remotion components — use `useCurrentFrame`, `useVideoConfig`,
-`interpolate`, `spring`, `AbsoluteFill`, etc.
-
-```tsx
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-
-export const Intro = () => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const enter = spring({ frame, fps, config: { damping: 14 } });
-  return (
-    <AbsoluteFill style={{ background: "#0b0d12", color: "#fff", padding: 140, justifyContent: "center" }}>
-      <div style={{ fontSize: 96, fontWeight: 800, opacity: enter, transform: `translateY(${interpolate(enter, [0, 1], [50, 0])}px)` }}>
-        Title here
-      </div>
-    </AbsoluteFill>
-  );
-};
+```jsonc
+{
+  "config": { "fps": 30, "width": 1920, "height": 1080,
+    "theme": { "accent1": "#6366f1", "accent2": "#ec4899", "text": "#f5f6fa", "bg": "#0b0d12", "font": "Segoe UI, system-ui, sans-serif" } },
+  "slides": [
+    {
+      "id": "title",                  // unique, stable
+      "durationInFrames": 90,         // intro animation length (30fps → 90 = 3s)
+      "background": { "type": "radial", "from": "#11141d", "to": "#0b0d12", "at": "18% 0%" },
+      "elements": [ /* see below */ ]
+    }
+  ]
+}
 ```
 
-Register it in `deck.tsx`:
-
-```tsx
-import type { DeckConfig, SlideDef } from "remotion-deck";
-import { Intro } from "./slides/Intro";
-
-export const DECK: Partial<DeckConfig> = { fps: 30, width: 1920, height: 1080 };
-export const SLIDES: SlideDef[] = [
-  { id: "intro", component: Intro, durationInFrames: 90 },
-];
+**Element** (positions are composition pixels in the 1920×1080 space):
+```jsonc
+{ "id": "title", "type": "text", "x": 140, "y": 520, "w": 1620, "h": 200,
+  "text": "Line one\nLine two",
+  "style": { "fontSize": 88, "fontWeight": 800, "color": "#f5f6fa", "align": "left",
+             "lineHeight": 1.1, "letterSpacing": "0.02em", "italic": false,
+             "uppercase": false, "gradientText": false },
+  "animation": { "preset": "rise", "start": 0 } }
 ```
+- `type: "text"` → `text`. `type: "image"` → `src`. `type: "shape"` → `shape: "rect" | "pill" | "line"`
+  (shapes fill with the accent gradient unless `style.background` is set).
+- `style.gradientText: true` fills text with the accent gradient (great for closing lines).
+- `background`: a color string, or `{ "type": "radial" | "linear", "from", "to", "at" }`.
 
-Array order == presentation order == PDF page order.
+**Animation presets** (`animation.preset`, with `start` frame and optional `duration`):
+`none`, `fade`, `rise`, `slide-left`, `slide-up`, `pop`, `typewriter`.
 
-## Presenting
+## Authoring conventions (match the built-in look)
 
-`src/main.tsx`:
+- Left margin `x: 140`. Title slide: eyebrow (fontSize 26, `uppercase`, color `#6366f1`) → title
+  (fontSize 88–96, fontWeight 800) → a `shape` `pill` rule (h 6) → subtitle (fontSize 34, dim).
+- Content slide: eyebrow/section label → heading (fontSize 60, weight 800) → sub (28, dim) →
+  bullets as text elements prefixed `"•   "` (fontSize 32–38).
+- Stagger reveals: give each element an increasing `animation.start` (~6–16 frames apart) so
+  content builds in. Use `rise`/`slide-up` for body, `fade` for labels, `pop`/`gradientText` for
+  closings.
+- Dim text color: `"rgba(245,246,250,0.6)"`. Accents: `#6366f1` (indigo), `#ec4899` (pink).
+- Array order == presentation order == PDF page order.
 
-```tsx
-import ReactDOM from "react-dom/client";
-import { SlideDeck } from "remotion-deck";
-import { DECK, SLIDES } from "./deck";
+## Typical flows
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <SlideDeck slides={SLIDES} config={DECK} />,
-);
-```
+- **Generate a deck from an outline**: write a `deck.json` with a title slide, one slide per
+  section (heading + bullets), and a closing — following the conventions above. Then run
+  `npx remotion-deck doctor` and tell the user to run `npx remotion-deck dev` to refine.
+- **Edit existing**: read `deck.json`, patch the targeted slide/element, keep ids stable.
+- **Restyle**: adjust `style` / `config.theme`; positions stay in composition px.
 
-Run with `vite`. Keys: → / Space / click = next, ← = prev, Home / End = first / last.
-`SlideDeck` props: `slides`, `config`, `initialIndex`, `onIndexChange`, `showProgress`,
-`showCounter`, `advanceOnClick`, `className`, `style`.
+## Verification
 
-Do NOT wrap the root in `<React.StrictMode>` — its dev double-mount can interfere with the
-player. (Playback is driven by `seekTo()` in a rAF loop, not `play()`/`autoPlay`, so it is not
-affected by browser autoplay policy.)
+After authoring, run `npx remotion-deck pdf` (or `doctor --dry`) to confirm the deck parses and
+renders. If the user has the editor open, your `deck.json` edits appear on their next load.
 
-## Exporting to PDF
+## Advanced: code slides
 
-`remotion-entry.ts` registers the deck:
+For a slide that needs arbitrary React/Remotion logic, a project can also use the library API
+(`import { SlideDeck, deckFromJson } from "remotion-deck"`) and mix in a custom component slide.
+This bypasses the zero-config CLI and needs a project build — prefer JSON slides unless a slide
+truly needs custom code.
 
-```ts
-import { registerDeck } from "remotion-deck";
-import { DECK, SLIDES } from "./deck";
-registerDeck(SLIDES, DECK);
-```
+## Licensing
 
-`scripts/export-pdf.mjs`:
+Remotion (a peer dependency) is NOT MIT — free for individuals, companies ≤3 people, and
+non-profits; larger companies need a paid Company License (remotion.pro). Mention this when the
+user distributes a deck. See the repo's NOTICE.
 
-```js
-import { renderDeckToPdf } from "remotion-deck/node";
-await renderDeckToPdf({
-  entryPoint: "src/remotion-entry.ts",
-  output: "presentation.pdf",
-  // frame: "last" (default = finished state) | number | (comp) => number
-});
-```
+## Local-dev gotcha
 
-Run with `node scripts/export-pdf.mjs`. The first run downloads a headless browser (tens of
-seconds). Each page is one slide's chosen frame at native resolution; PDF is static, so only a
-snapshot is captured, not the animation.
-
-## Verification (always do this before claiming done)
-
-1. `tsc --noEmit` (or the project's typecheck) passes.
-2. Run the dev server and confirm slide 1 renders and ← / → navigates (screenshot if a browser
-   tool is available; a blank/black slide usually means the deck froze on frame 0).
-3. For PDF work, run the export and confirm the PDF page count equals the slide count.
-
-## Gotchas
-
-- The PDF renderer passes `ignoreRegisterRootWarning` to Remotion's bundler because the entry
-  calls `registerDeck` (which calls `registerRoot` indirectly) — this is expected.
-- `@remotion/bundler` and `@remotion/renderer` are optional peers; only needed for PDF export.
-- When testing an UNPUBLISHED build of remotion-deck in a separate consumer project, install it
-  via a packed tarball (`npm pack` then `npm i ../remotion-deck/remotion-deck-x.y.z.tgz`), NOT via
-  `file:../remotion-deck` or `npm link`. A symlinked package keeps its own nested `remotion`,
-  producing two Remotion instances; the deck then throws "useCurrentFrame can only be called inside
-  a component that was passed to <Player>". A real npm install dedupes the peer `remotion` to one
-  copy, so this only bites local linking.
-
-## Licensing (mention to the user when distributing)
-
-Remotion is NOT MIT — it is source-available and free for individuals, companies with up to 3
-employees, and non-profits; larger companies need a paid Company License (remotion.pro). Using
-remotion-deck means using Remotion, so this applies. See the repo's NOTICE / README.
+When testing an unpublished build of remotion-deck in a separate project, install it via a packed
+tarball (`npm pack` then `npm i ../remotion-deck/remotion-deck-x.y.z.tgz`), NOT `file:`/`npm link`
+— a symlink yields two Remotion copies and the deck throws "useCurrentFrame can only be called
+inside a component that was passed to <Player>".

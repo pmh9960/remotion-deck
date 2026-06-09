@@ -23,6 +23,8 @@ export type SlideDeckProps = {
   showCounter?: boolean;
   /** Advance to the next slide when the stage is clicked. Default true. */
   advanceOnClick?: boolean;
+  /** Scroll the mouse wheel up/down to change slides. Default true. */
+  wheelNavigation?: boolean;
   className?: string;
   style?: CSSProperties;
 };
@@ -44,6 +46,7 @@ export const SlideDeck = ({
   showProgress = true,
   showCounter = true,
   advanceOnClick = true,
+  wheelNavigation = true,
   className,
   style,
 }: SlideDeckProps) => {
@@ -52,6 +55,7 @@ export const SlideDeck = ({
     Math.min(Math.max(0, initialIndex), Math.max(0, slides.length - 1)),
   );
   const playerRef = useRef<PlayerRef>(null);
+  const wheelLock = useRef(0);
 
   const go = useCallback(
     (delta: number) => {
@@ -61,6 +65,18 @@ export const SlideDeck = ({
       });
     },
     [slides.length],
+  );
+
+  // Throttled wheel navigation: one slide per gesture, not per wheel tick.
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (!wheelNavigation || Math.abs(e.deltaY) < 8) return;
+      const now = Date.now();
+      if (now - wheelLock.current < 350) return;
+      wheelLock.current = now;
+      go(e.deltaY > 0 ? 1 : -1);
+    },
+    [go, wheelNavigation],
   );
 
   useEffect(() => {
@@ -121,6 +137,7 @@ export const SlideDeck = ({
         ...style,
       }}
       onClick={advanceOnClick ? () => go(1) : undefined}
+      onWheel={onWheel}
     >
       {showProgress && (
         <div

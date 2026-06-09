@@ -45,6 +45,48 @@ export const DeckEditor = () => {
   const updateSlide = (next: SlideJson) =>
     update({ ...deck, slides: deck.slides.map((s, i) => (i === index ? next : s)) });
 
+  const uniqueId = (base: string) => {
+    const ids = new Set(deck.slides.map((s) => s.id));
+    if (!ids.has(base)) return base;
+    let n = 2;
+    while (ids.has(`${base}-${n}`)) n += 1;
+    return `${base}-${n}`;
+  };
+  const withSlides = (slides: SlideJson[], select: number) => {
+    update({ ...deck, slides });
+    setSel(Math.max(0, Math.min(select, slides.length - 1)));
+    setSelectedId(null);
+  };
+  const addSlide = () => {
+    const blank: SlideJson = {
+      id: uniqueId("slide"),
+      durationInFrames: 90,
+      elements: [{ id: "text", type: "text", x: 140, y: 470, w: 1640, h: 160, text: "New slide", style: { fontSize: 72, fontWeight: 800 }, animation: { preset: "rise", start: 0 } }],
+    };
+    const slides = [...deck.slides];
+    slides.splice(index + 1, 0, blank);
+    withSlides(slides, index + 1);
+  };
+  const duplicateSlide = (i: number) => {
+    const copy: SlideJson = JSON.parse(JSON.stringify(deck.slides[i]));
+    copy.id = uniqueId(`${copy.id}-copy`);
+    const slides = [...deck.slides];
+    slides.splice(i + 1, 0, copy);
+    withSlides(slides, i + 1);
+  };
+  const deleteSlide = (i: number) => {
+    if (deck.slides.length <= 1) return;
+    withSlides(deck.slides.filter((_, j) => j !== i), i > 0 ? i - 1 : 0);
+  };
+  const moveSlide = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= deck.slides.length) return;
+    const slides = [...deck.slides];
+    const [s] = slides.splice(i, 1);
+    slides.splice(j, 0, s);
+    withSlides(slides, j);
+  };
+
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui, sans-serif", color: "#e8e9ee" }}>
       <div style={{ height: 48, flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: "#0d0f16", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -62,7 +104,7 @@ export const DeckEditor = () => {
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedId(null); }} />
+        <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedId(null); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
         <Canvas slide={slide} theme={theme} config={config} selectedId={selectedId} onSelect={setSelectedId} onChangeSlide={updateSlide} />
         <TextPanel slide={slide} selectedId={selectedId} onSelect={setSelectedId} onChange={updateSlide} />
       </div>
