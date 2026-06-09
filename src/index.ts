@@ -11,6 +11,30 @@ export {
   type SlideDef,
 } from "./types.js";
 
+// JSON data-model layer (drives the visual editor and Claude Code).
+export { deckFromJson, type ResolvedDeck } from "./deckFromJson.js";
+export { SlideRenderer, renderSlide } from "./SlideRenderer.js";
+export { computeElementStyle, type ComputedAnimation } from "./animations.js";
+export {
+  parseDeck,
+  resolveTheme,
+  resolveDeckConfig,
+  DEFAULT_THEME,
+  type DeckJson,
+  type SlideJson,
+  type SlideElement,
+  type TextElement,
+  type ImageElement,
+  type ShapeElement,
+  type ElementStyle,
+  type ElementAnimation,
+  type AnimationPreset,
+  type Background,
+  type ThemeJson,
+  type ResolvedTheme,
+  type DeckConfigJson,
+} from "./schema.js";
+
 // The PDF renderer lives in the Node-only entry to keep @remotion/bundler and
 // @remotion/renderer out of browser bundles:
 //   import { renderDeckToPdf } from "remotion-deck/node";

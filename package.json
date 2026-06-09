@@ -16,6 +16,7 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": { "remotion-deck": "./dist/cli.js" },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -36,7 +37,9 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "@vitejs/plugin-react": "^4.3.1",
+    "pdf-lib": "^1.17.1",
+    "vite": "^5.4.0"
   },
   "peerDependencies": {
     "@remotion/bundler": ">=4.0.0 <5.0.0",
@@ -56,11 +59,9 @@
     "@remotion/renderer": "^4.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remotion": "^4.0.0",
-    "typescript": "^5.5.3",
-    "vite": "^5.4.0"
+    "typescript": "^5.5.3"
   }
 }
