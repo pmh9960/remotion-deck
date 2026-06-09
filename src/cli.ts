@@ -71,8 +71,9 @@ const cmdServe = async (mode: "editor" | "present") => {
     process.exit(1);
   }
   const port = Number(getFlag("port")) || 5173;
+  const open = process.argv.includes("--open");
   const { createDevServer } = await import("./server/createDevServer.js");
-  await createDevServer({ cwd, deckFile, mode, port });
+  await createDevServer({ cwd, deckFile, mode, port, open });
   // Keep the process alive; the Vite server runs until Ctrl+C.
 };
 

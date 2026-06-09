@@ -29,6 +29,8 @@ export const createDevServer = async (opts: {
   deckFile: string;
   mode: "editor" | "present";
   port?: number;
+  /** Auto-open a browser tab. Default false (silent) — opt in with `--open`. */
+  open?: boolean;
 }): Promise<ViteDevServer> => {
   const appDir = path.join(opts.cwd, ".remotion-deck");
   fs.mkdirSync(appDir, { recursive: true });
@@ -40,7 +42,7 @@ export const createDevServer = async (opts: {
     root: appDir,
     plugins: [react(), deckMiddleware({ deckFile: opts.deckFile })],
     optimizeDeps: { include: ["react", "react-dom", "react-dom/client"] },
-    server: { port: opts.port ?? 5173, open: true },
+    server: { port: opts.port ?? 5173, open: opts.open ?? false },
   });
   await server.listen();
   server.printUrls();
