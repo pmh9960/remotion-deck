@@ -25,6 +25,14 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "import": "./dist/editor/index.js"
+    },
+    "./present": {
+      "types": "./dist/editor/present.d.ts",
+      "import": "./dist/editor/present.js"
     }
   },
   "scripts": {

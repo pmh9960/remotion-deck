@@ -64,6 +64,18 @@ const cmdPdf = async () => {
   }
 };
 
+const cmdServe = async (mode: "editor" | "present") => {
+  const deckFile = path.resolve(cwd, getFlag("deck") ?? "deck.json");
+  if (!fs.existsSync(deckFile)) {
+    console.error(`remotion-deck: ${path.relative(cwd, deckFile)} not found`);
+    process.exit(1);
+  }
+  const port = Number(getFlag("port")) || 5173;
+  const { createDevServer } = await import("./server/createDevServer.js");
+  await createDevServer({ cwd, deckFile, mode, port });
+  // Keep the process alive; the Vite server runs until Ctrl+C.
+};
+
 const main = async () => {
   const command = process.argv[2];
   switch (command) {
@@ -71,7 +83,11 @@ const main = async () => {
       await cmdPdf();
       break;
     case "dev":
+      await cmdServe("editor");
+      break;
     case "present":
+      await cmdServe("present");
+      break;
     case "init":
       console.error(`remotion-deck: "${command}" is not implemented yet.`);
       process.exit(1);
