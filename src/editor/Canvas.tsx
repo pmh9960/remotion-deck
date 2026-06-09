@@ -5,9 +5,8 @@ import { useSize } from "./useSize.js";
 
 type Drag = { id: string; mode: "move" | "resize"; px: number; py: number; ox: number; oy: number; ow: number; oh: number };
 
-/** Renders the slide at its final frame inside a fitted 1920×1080 stage. Click to
- *  select, drag to move, corner handle to resize, double-click text to edit inline.
- *  Geometry/text edits write back through onChangeSlide (which debounce-saves). */
+const SNAP = 8; // composition px within which an edge snaps to a guide line
+
 export const Canvas = ({
   slide,
   theme,
@@ -15,6 +14,7 @@ export const Canvas = ({
   selectedId,
   onSelect,
   onChangeSlide,
+  onWheelNav,
 }: {
   slide: SlideJson;
   theme: ResolvedTheme;
@@ -22,12 +22,14 @@ export const Canvas = ({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onChangeSlide: (slide: SlideJson) => void;
+  onWheelNav: (dir: -1 | 1) => void;
 }) => {
   const { ref, size } = useSize();
   const scale = Math.min(size.w / config.width, size.h / config.height) || 1;
   const lastFrame = slide.durationInFrames - 1;
   const drag = useRef<Drag | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
 
   const patch = (id: string, next: Partial<SlideElement>) =>
     onChangeSlide({ ...slide, elements: slide.elements.map((e) => (e.id === id ? ({ ...e, ...next } as SlideElement) : e)) });
@@ -38,16 +40,39 @@ export const Canvas = ({
     e.preventDefault();
     onSelect(el.id);
     drag.current = { id: el.id, mode, px: e.clientX, py: e.clientY, ox: el.x, oy: el.y, ow: el.w, oh: el.h };
+
+    // Snap targets: every other element's left/center/right and top/center/bottom, plus canvas center.
+    const others = slide.elements.filter((o) => o.id !== el.id);
+    const xT = [config.width / 2, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w])];
+    const yT = [config.height / 2, ...others.flatMap((o) => [o.y, o.y + o.h / 2, o.y + o.h])];
+
     const move = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d) return;
       const dx = Math.round((ev.clientX - d.px) / scale);
       const dy = Math.round((ev.clientY - d.py) / scale);
-      if (d.mode === "move") patch(d.id, { x: d.ox + dx, y: d.oy + dy });
-      else patch(d.id, { w: Math.max(20, d.ow + dx), h: Math.max(20, d.oh + dy) });
+      if (d.mode === "resize") {
+        patch(d.id, { w: Math.max(20, d.ow + dx), h: Math.max(20, d.oh + dy) });
+        return;
+      }
+      let nx = d.ox + dx;
+      let ny = d.oy + dy;
+      const gx: number[] = [];
+      const gy: number[] = [];
+      for (const off of [0, d.ow / 2, d.ow]) {
+        const t = xT.find((v) => Math.abs(nx + off - v) <= SNAP);
+        if (t !== undefined) { nx = Math.round(t - off); gx.push(t); break; }
+      }
+      for (const off of [0, d.oh / 2, d.oh]) {
+        const t = yT.find((v) => Math.abs(ny + off - v) <= SNAP);
+        if (t !== undefined) { ny = Math.round(t - off); gy.push(t); break; }
+      }
+      patch(d.id, { x: nx, y: ny });
+      setGuides({ x: gx, y: gy });
     };
     const up = () => {
       drag.current = null;
+      setGuides({ x: [], y: [] });
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -56,9 +81,15 @@ export const Canvas = ({
   };
 
   return (
-    <div ref={ref} onPointerDown={() => onSelect(null)} style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}>
+    <div
+      ref={ref}
+      onPointerDown={() => onSelect(null)}
+      onWheel={(e) => { if (Math.abs(e.deltaY) > 8) onWheelNav(e.deltaY > 0 ? 1 : -1); }}
+      style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}
+    >
       <div style={{ width: config.width, height: config.height, transform: `scale(${scale})`, transformOrigin: "center", position: "relative", flex: "0 0 auto", boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }}>
         {renderSlide(slide, lastFrame, config.fps, theme)}
+
         {slide.elements.map((el) => {
           const active = selectedId === el.id;
           const box = { position: "absolute" as const, left: el.x, top: el.y, width: el.w, height: el.h };
@@ -92,6 +123,13 @@ export const Canvas = ({
             </div>
           );
         })}
+
+        {guides.x.map((gx, i) => (
+          <div key={`gx${i}`} style={{ position: "absolute", left: gx, top: 0, width: 1, height: config.height, background: "#ec4899", pointerEvents: "none", zIndex: 50 }} />
+        ))}
+        {guides.y.map((gy, i) => (
+          <div key={`gy${i}`} style={{ position: "absolute", top: gy, left: 0, height: 1, width: config.width, background: "#ec4899", pointerEvents: "none", zIndex: 50 }} />
+        ))}
       </div>
     </div>
   );

@@ -4,17 +4,17 @@ import { loadDeck, saveDeck } from "./api.js";
 
 export type DeckStore = {
   deck: DeckJson | null;
-  /** Replace the deck, record an undo step, and debounce-save to disk. */
+  /** Replace the deck, record an undo step, and debounce-autosave to the sidecar. */
   update: (next: DeckJson) => void;
   undo: () => void;
   redo: () => void;
-  /** Force an immediate save (Ctrl+S). */
+  /** Commit to deck.json (Ctrl+S). */
   save: () => void;
-  status: "loading" | "saved" | "saving";
+  /** "saved" = committed to deck.json; "draft" = autosaved to sidecar only. */
+  status: "loading" | "saving" | "draft" | "saved";
 };
 
 const HISTORY_LIMIT = 100;
-// Rapid edits (typing a word, dragging) within this window collapse into one undo step.
 const COALESCE_MS = 500;
 
 export const useDeckStore = (): DeckStore => {
@@ -38,12 +38,13 @@ export const useDeckStore = (): DeckStore => {
     });
   }, []);
 
-  const scheduleSave = (d: DeckJson) => {
+  // Debounced silent autosave to the sidecar file (does not touch deck.json).
+  const scheduleAutosave = (d: DeckJson) => {
     setStatus("saving");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
-      await saveDeck(d);
-      setStatus("saved");
+      await saveDeck(d, "autosave");
+      setStatus("draft");
     }, 400);
   };
 
@@ -57,7 +58,7 @@ export const useDeckStore = (): DeckStore => {
     }
     future.current = [];
     setDeck(next);
-    scheduleSave(next);
+    scheduleAutosave(next);
   }, []);
 
   const undo = useCallback(() => {
@@ -66,7 +67,7 @@ export const useDeckStore = (): DeckStore => {
     future.current.push(deckRef.current);
     lastPush.current = 0;
     setDeck(prev);
-    scheduleSave(prev);
+    scheduleAutosave(prev);
   }, []);
 
   const redo = useCallback(() => {
@@ -74,14 +75,14 @@ export const useDeckStore = (): DeckStore => {
     const next = future.current.pop() as DeckJson;
     past.current.push(deckRef.current);
     setDeck(next);
-    scheduleSave(next);
+    scheduleAutosave(next);
   }, []);
 
   const save = useCallback(() => {
     if (!deckRef.current) return;
     if (timer.current) clearTimeout(timer.current);
     setStatus("saving");
-    saveDeck(deckRef.current).then(() => setStatus("saved"));
+    saveDeck(deckRef.current, "commit").then(() => setStatus("saved"));
   }, []);
 
   return { deck, update, undo, redo, save, status };

@@ -1,8 +1,9 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { deckFromJson } from "../deckFromJson.js";
 import { SlideDeck } from "../SlideDeck.js";
 import { resolveDeckConfig, resolveTheme, type SlideJson } from "../schema.js";
 import { Canvas } from "./Canvas.js";
+import { ChatBar } from "./ChatBar.js";
 import { SlideRail } from "./SlideRail.js";
 import { TextPanel } from "./TextPanel.js";
 import { useDeckStore } from "./useDeckStore.js";
@@ -12,6 +13,7 @@ export const DeckEditor = () => {
   const [sel, setSel] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const wheelLock = useRef(0);
 
   // Global shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo, Ctrl/Cmd+S save.
   useEffect(() => {
@@ -44,6 +46,15 @@ export const DeckEditor = () => {
 
   const updateSlide = (next: SlideJson) =>
     update({ ...deck, slides: deck.slides.map((s, i) => (i === index ? next : s)) });
+
+  // Throttled wheel over the canvas changes the current slide.
+  const wheelNav = (dir: -1 | 1) => {
+    const now = Date.now();
+    if (now - wheelLock.current < 300) return;
+    wheelLock.current = now;
+    setSel(Math.max(0, Math.min(deck.slides.length - 1, index + dir)));
+    setSelectedId(null);
+  };
 
   const uniqueId = (base: string) => {
     const ids = new Set(deck.slides.map((s) => s.id));
@@ -96,8 +107,8 @@ export const DeckEditor = () => {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={undo} title="Undo (Ctrl+Z)" style={iconBtn}>↶</button>
           <button onClick={redo} title="Redo (Ctrl+Shift+Z)" style={iconBtn}>↷</button>
-          <span style={{ fontSize: 12, marginLeft: 6, color: status === "saving" ? "#e9b949" : "rgba(255,255,255,0.45)" }}>
-            {status === "saving" ? "saving…" : "saved"}
+          <span title="Edits autosave to deck.autosave.json; Ctrl+S writes deck.json" style={{ fontSize: 12, marginLeft: 6, color: status === "saving" ? "#e9b949" : status === "draft" ? "#e9b949" : "rgba(255,255,255,0.45)" }}>
+            {status === "saving" ? "saving…" : status === "draft" ? "draft · ⌘S to save" : "saved"}
           </span>
           <button onClick={() => setPlaying(true)} style={{ ...btn, marginLeft: 6 }}>▶ Play</button>
         </div>
@@ -105,9 +116,11 @@ export const DeckEditor = () => {
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedId(null); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
-        <Canvas slide={slide} theme={theme} config={config} selectedId={selectedId} onSelect={setSelectedId} onChangeSlide={updateSlide} />
+        <Canvas slide={slide} theme={theme} config={config} selectedId={selectedId} onSelect={setSelectedId} onChangeSlide={updateSlide} onWheelNav={wheelNav} />
         <TextPanel slide={slide} selectedId={selectedId} onSelect={setSelectedId} onChange={updateSlide} />
       </div>
+
+      <ChatBar deck={deck} onDeck={update} />
 
       {playing && (
         <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }}>
