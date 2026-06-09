@@ -5,5 +5,8 @@ example/dist
 *.log
 .DS_Store
 
+# packed tarballs from `npm pack`
+*.tgz
+
 # tooling state (not part of the project)
 .omc/

@@ -5,7 +5,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import type { DeckConfig, SlideDef } from "../src";
+import type { DeckConfig, SlideDef } from "remotion-deck";
 
 export const DECK: Partial<DeckConfig> = { fps: 30, width: 1920, height: 1080 };
 

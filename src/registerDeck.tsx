@@ -1,5 +1,5 @@
 import { Composition, registerRoot } from "remotion";
-import { resolveConfig, type DeckConfig, type SlideDef } from "./types";
+import { resolveConfig, type DeckConfig, type SlideDef } from "./types.js";
 
 /**
  * Build a Remotion Root component that registers every slide as a <Composition>.

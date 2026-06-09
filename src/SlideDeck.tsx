@@ -6,7 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { resolveConfig, type DeckConfig, type SlideDef } from "./types";
+import { resolveConfig, type DeckConfig, type SlideDef } from "./types.js";
 
 export type SlideDeckProps = {
   /** The ordered list of slides. Order == presentation order == PDF page order. */

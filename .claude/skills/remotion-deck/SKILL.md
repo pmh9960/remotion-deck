@@ -132,6 +132,12 @@ snapshot is captured, not the animation.
 - The PDF renderer passes `ignoreRegisterRootWarning` to Remotion's bundler because the entry
   calls `registerDeck` (which calls `registerRoot` indirectly) — this is expected.
 - `@remotion/bundler` and `@remotion/renderer` are optional peers; only needed for PDF export.
+- When testing an UNPUBLISHED build of remotion-deck in a separate consumer project, install it
+  via a packed tarball (`npm pack` then `npm i ../remotion-deck/remotion-deck-x.y.z.tgz`), NOT via
+  `file:../remotion-deck` or `npm link`. A symlinked package keeps its own nested `remotion`,
+  producing two Remotion instances; the deck then throws "useCurrentFrame can only be called inside
+  a component that was passed to <Player>". A real npm install dedupes the peer `remotion` to one
+  copy, so this only bites local linking.
 
 ## Licensing (mention to the user when distributing)
 
