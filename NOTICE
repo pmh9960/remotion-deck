@@ -1,0 +1,26 @@
+remotion-deck
+Copyright (c) 2026 pmh9960
+
+This product's own source code is licensed under the MIT License (see LICENSE).
+
+------------------------------------------------------------------------------
+Third-party dependency notice: Remotion
+------------------------------------------------------------------------------
+
+remotion-deck depends on Remotion (the "remotion" and "@remotion/*" packages)
+as a peerDependency. It does NOT bundle or redistribute Remotion.
+
+Remotion is NOT MIT-licensed. It is distributed under the source-available
+Remotion License:
+
+    https://www.remotion.dev/docs/license
+
+Summary (not a substitute for the actual license):
+  - Free for individuals, for-profit companies with up to 3 employees, and
+    non-profit organizations.
+  - Companies that do not qualify must purchase a Company License from
+    https://www.remotion.pro/
+
+Anyone who uses remotion-deck is using Remotion and is bound by the Remotion
+License, independently of remotion-deck's own MIT license. Review the Remotion
+License and ensure your usage complies before deploying or distributing.

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Test against the installed Remotion (from package.json) plus the latest
+        # release, so a Renovate bump and upstream releases both get verified.
+        remotion: [installed, latest]
+    name: build + smoke (remotion@${{ matrix.remotion }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bump to latest Remotion
+        if: matrix.remotion == 'latest'
+        run: |
+          npm i -D remotion@latest @remotion/player@latest @remotion/bundler@latest @remotion/renderer@latest
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke (render example deck → PDF)
+        run: npm run smoke
+
+      - name: Upload rendered PDF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-pdf-remotion-${{ matrix.remotion }}
+          path: example/out.pdf
+          if-no-files-found: ignore

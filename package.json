@@ -1,0 +1,66 @@
+{
+  "name": "remotion-deck",
+  "version": "0.1.0",
+  "description": "Build presentation decks with Remotion: frame-based slide animations, arrow-key navigation, and PDF export. A thin wrapper over Remotion's public API that rides along with new Remotion versions.",
+  "type": "module",
+  "license": "MIT",
+  "author": "pmh9960",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pmh9960/remotion-deck.git"
+  },
+  "bugs": { "url": "https://github.com/pmh9960/remotion-deck/issues" },
+  "homepage": "https://github.com/pmh9960/remotion-deck#readme",
+  "keywords": ["remotion", "presentation", "slides", "deck", "pdf", "react"],
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "example": "vite example",
+    "example:build": "vite build example",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "npm run build && npm run smoke",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "peerDependencies": {
+    "@remotion/bundler": ">=4.0.0 <5.0.0",
+    "@remotion/player": ">=4.0.0 <5.0.0",
+    "@remotion/renderer": ">=4.0.0 <5.0.0",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "remotion": ">=4.0.0 <5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@remotion/bundler": { "optional": true },
+    "@remotion/renderer": { "optional": true }
+  },
+  "devDependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/player": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0"
+  }
+}

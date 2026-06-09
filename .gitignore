@@ -1,0 +1,9 @@
+node_modules
+dist
+example/out.pdf
+example/dist
+*.log
+.DS_Store
+
+# tooling state (not part of the project)
+.omc/

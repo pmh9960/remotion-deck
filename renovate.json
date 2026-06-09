@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Group every Remotion package into one PR — they must move together (same version).",
+      "matchSourceUrls": ["https://github.com/remotion-dev/remotion"],
+      "matchPackageNames": ["remotion", "/^@remotion//"],
+      "groupName": "remotion",
+      "schedule": ["at any time"],
+      "automerge": false
+    },
+    {
+      "description": "Hold back across Remotion majors — the peerDependencies cap is <5.0.0; a major needs a manual look.",
+      "matchPackageNames": ["remotion", "/^@remotion//"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"]
+  }
+}
