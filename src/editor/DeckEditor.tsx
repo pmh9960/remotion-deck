@@ -16,11 +16,24 @@ export const DeckEditor = () => {
   const [exportMsg, setExportMsg] = useState("");
   const wheelLock = useRef(0);
 
-  // Global shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo, Ctrl/Cmd+S save.
+  // Global shortcuts: arrows page slides when nothing is selected (Canvas nudges the selection
+  // otherwise); Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo, Ctrl/Cmd+S save.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
+      const tag = document.activeElement?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       const k = e.key.toLowerCase();
+      if (selectedIds.length === 0 && ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(k)) {
+        e.preventDefault();
+        const dir = k === "arrowleft" || k === "arrowup" ? -1 : 1;
+        setSel((s) => {
+          const n = deck ? deck.slides.length : 1;
+          return Math.max(0, Math.min(n - 1, Math.min(s, n - 1) + dir));
+        });
+        setSelectedIds([]);
+        return;
+      }
+      if (!(e.ctrlKey || e.metaKey)) return;
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -34,7 +47,7 @@ export const DeckEditor = () => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, save]);
+  }, [undo, redo, save, selectedIds, deck]);
 
   if (!deck) {
     return <div style={{ color: "#888", padding: 40, fontFamily: "system-ui" }}>Loading deck…</div>;
