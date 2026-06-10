@@ -10,18 +10,37 @@ visually, and exports a PDF. You and the user edit the *same* file: you write/pa
 the user fine-tunes in the visual editor (`remotion-deck dev`). Slides are data, not code, so you
 can generate a whole talk by writing JSON.
 
+**Setup (if not installed yet):** the package is on GitHub — `npm install pmh9960/remotion-deck`
+(its `prepare` script builds on install; no npm publish needed). To (re)install this skill into a
+project, run `npx remotion-deck skill` (or `--global` for `~/.claude`). A deck project also needs
+the Remotion peers; `remotion-deck init` scaffolds them.
+
+**The editor is collaborative.** In `remotion-deck dev` the user can: multi-select + drag (Shift =
+axis lock), resize single or group (Shift = aspect lock), align/distribute, nudge with arrows,
+inline-edit text with Bold/Italic/Underline/bullets, insert text/shapes/images (paste or drop),
+reorder z-index, and undo/redo per action. They also have a chat box that edits the deck. So a
+common flow is: the user roughs out boxes, then asks you (or the chat) to "make it look good" —
+you restyle by patching `deck.json`. Keep element `id`s stable so their selections/edits line up.
+
 ## CLI
 
 | Command | What it does |
 |---|---|
 | `npx remotion-deck init` | Scaffold `deck.json` + `package.json` in an empty folder |
-| `npx remotion-deck dev` | Open the visual editor (silent; `--open` to auto-open a tab) |
+| `npx remotion-deck dev` | Open the visual editor (silent; `--open` to auto-open a tab, `--host` for remote/headless) |
 | `npx remotion-deck present` | Play the deck full-screen |
 | `npx remotion-deck pdf` | Render `deck.json` → `presentation.pdf` (one page per slide) |
+| `npx remotion-deck html` | Bundle a self-contained `presentation.html` (no server; share/open anywhere) |
 | `npx remotion-deck doctor` | Tidy layout: align edges, snap to grid, trim whitespace (`--dry` to preview) |
+| `npx remotion-deck skill` | Install this skill into a project (`--global` for `~/.claude`) |
 
 After writing or editing `deck.json`, run `npx remotion-deck doctor` to auto-align, then
-`npx remotion-deck pdf` if the user wants a PDF.
+`npx remotion-deck pdf` (or `html`) if the user wants an exportable artifact.
+
+**Headless / Linux servers:** `dev`, `present`, and `html` need no browser on the host — run
+`remotion-deck dev --host` and open the printed Network URL from any machine. Only `pdf` renders
+through a headless Chromium (Remotion auto-downloads it; on minimal Linux you may need system libs
+like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareable artifact headless.
 
 ## deck.json schema
 
@@ -46,11 +65,15 @@ After writing or editing `deck.json`, run `npx remotion-deck doctor` to auto-ali
   "text": "Line one\nLine two",
   "style": { "fontSize": 88, "fontWeight": 800, "color": "#f5f6fa", "align": "left",
              "lineHeight": 1.1, "letterSpacing": "0.02em", "italic": false,
-             "uppercase": false, "gradientText": false },
+             "underline": false, "uppercase": false, "gradientText": false },
   "animation": { "preset": "rise", "start": 0 } }
 ```
 - `type: "text"` → `text`. `type: "image"` → `src`. `type: "shape"` → `shape: "rect" | "pill" | "line"`
   (shapes fill with the accent gradient unless `style.background` is set).
+- Image `src` may be a data-URL, an `http(s)` URL, or a project-relative `assets/<file>` path. The
+  editor stores pasted/dropped images under `assets/` and references them by path (keeps deck.json
+  small); `pdf`/`html` exports re-inline them so the artifact stays self-contained. When you author
+  images by hand, prefer a URL or an existing `assets/...` file.
 - `style.gradientText: true` fills text with the accent gradient (great for closing lines).
 - `background`: a color string, or `{ "type": "radial" | "linear", "from", "to", "at" }`.
 

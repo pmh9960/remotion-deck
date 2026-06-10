@@ -36,7 +36,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-skill.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "example": "vite example",
     "example:build": "vite build example",

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const cwd = process.cwd();
 
@@ -13,11 +15,14 @@ const usage = () => {
   html      Bundle a self-contained presentation.html (share/open anywhere)
   doctor    Tidy the deck: align edges, snap to grid, trim whitespace
   init      Scaffold a new deck (deck.json + package.json)
+  skill     Install the Claude Code skill (./.claude/skills; --global for ~/.claude)
 
 Options:
   --deck <path>     deck JSON file (default: deck.json)
   --out <path>      output PDF path (default: presentation.pdf)
   --open            (dev/present) open a browser tab automatically
+  --host [addr]     (dev/present) bind the network (0.0.0.0) for headless/remote access
+  --global          (skill) install to ~/.claude instead of the current project
   --dry             (doctor) preview fixes without writing
 `);
 };
@@ -78,8 +83,11 @@ const cmdServe = async (mode: "editor" | "present") => {
   }
   const port = Number(getFlag("port")) || 5173;
   const open = process.argv.includes("--open");
+  // --host (bind all interfaces, for headless/remote) or --host <addr>.
+  const hostVal = getFlag("host");
+  const host = process.argv.includes("--host") ? (hostVal && !hostVal.startsWith("--") ? hostVal : true) : undefined;
   const { createDevServer } = await import("./server/createDevServer.js");
-  await createDevServer({ cwd, deckFile, mode, port, open });
+  await createDevServer({ cwd, deckFile, mode, port, open, host });
   // Keep the process alive; the Vite server runs until Ctrl+C.
 };
 
@@ -169,6 +177,29 @@ const cmdInit = () => {
   }
 };
 
+/** Install the bundled Claude Code skill so Claude knows how to author deck.json.
+ *  Default: project-local (./.claude/skills); --global installs to ~/.claude/skills. */
+const cmdSkill = () => {
+  const here = path.dirname(fileURLToPath(import.meta.url)); // dist/
+  const srcDir = path.join(here, "skill", "remotion-deck");
+  if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) {
+    console.error("remotion-deck: bundled skill not found — reinstall the package");
+    process.exit(1);
+  }
+  const global = process.argv.includes("--global");
+  const destDir = path.join(global ? os.homedir() : cwd, ".claude", "skills", "remotion-deck");
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const file of fs.readdirSync(srcDir)) {
+    fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+  }
+  console.log(`✓ installed remotion-deck skill → ${global ? destDir : path.relative(cwd, destDir)}`);
+  console.log(
+    global
+      ? "  available to Claude Code in every project on this machine"
+      : "  available in this project; commit .claude/skills/ to share it with your team",
+  );
+};
+
 const main = async () => {
   const command = process.argv[2];
   switch (command) {
@@ -189,6 +220,9 @@ const main = async () => {
       break;
     case "init":
       cmdInit();
+      break;
+    case "skill":
+      cmdSkill();
       break;
     case undefined:
     case "-h":
