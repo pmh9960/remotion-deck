@@ -72,7 +72,10 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
     if (!fs.existsSync(emptyMcp)) fs.writeFileSync(emptyMcp, '{"mcpServers":{}}');
     const model = process.env.REMOTION_DECK_MODEL || "opus";
     const permission = process.env.REMOTION_DECK_PERMISSION || "acceptEdits";
-    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
+    // Disallow interactive tools that would block this non-interactive (-p) session: AskUserQuestion
+    // would emit a tool call the editor UI can't answer, hanging the turn. Claude should just act or
+    // state its assumption instead of asking.
+    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--disallowedTools", "AskUserQuestion", "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
     child = spawn("claude", args, { cwd: opts.cwd, shell: true, env: process.env });
     turns = 0;
     child.stdout?.on("data", (d) => {
@@ -125,6 +128,14 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
     name: "remotion-deck:chat-api",
     configureServer(server) {
       server.httpServer?.once("close", killChild);
+      // POST /__chat/stop → interrupt the in-flight turn by killing the warm process (it respawns on
+      // the next message). Registered before /__chat so the prefix match doesn't swallow it.
+      server.middlewares.use("/__chat/stop", (req, res) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end(); return; }
+        killChild();
+        res.statusCode = 200;
+        res.end("stopped");
+      });
       server.middlewares.use("/__chat", (req, res) => {
         if (req.method !== "POST") { res.statusCode = 405; res.end(); return; }
         let body = "";

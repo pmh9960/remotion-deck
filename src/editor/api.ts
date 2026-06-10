@@ -53,11 +53,13 @@ export const chatStream = async (
   selection: ChatSelection | undefined,
   scope: "slide" | "deck" | undefined,
   onEvent: (e: ChatEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> => {
   const res = await fetch("/__chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message, selection, scope }),
+    signal,
   });
   if (!res.body) { onEvent({ type: "error", error: "no response stream" }); return; }
   const reader = res.body.getReader();
@@ -74,4 +76,9 @@ export const chatStream = async (
       if (line) { try { onEvent(JSON.parse(line) as ChatEvent); } catch { /* skip partial */ } }
     }
   }
+};
+
+/** Interrupt the in-flight chat turn on the server (kills the warm process; it respawns next turn). */
+export const stopChat = async (): Promise<void> => {
+  await fetch("/__chat/stop", { method: "POST" }).catch(() => {});
 };
