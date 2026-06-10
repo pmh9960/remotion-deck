@@ -41,7 +41,8 @@
     "example": "vite example",
     "example:build": "vite build example",
     "smoke": "node scripts/smoke.mjs",
-    "test": "npm run build && npm run smoke",
+    "test:unit": "node --test scripts/unit.test.mjs",
+    "test": "npm run build && npm run test:unit && npm run smoke",
     "prepare": "npm run build"
   },
   "dependencies": {
