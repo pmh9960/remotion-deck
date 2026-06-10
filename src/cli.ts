@@ -148,7 +148,8 @@ const cmdInit = () => {
   fs.writeFileSync(deckPath, JSON.stringify(STARTER_DECK, null, 2) + "\n");
   const pkgPath = path.join(cwd, "package.json");
   if (!fs.existsSync(pkgPath)) {
-    fs.writeFileSync(pkgPath, JSON.stringify(STARTER_PKG, null, 2) + "\n");
+    const pkg = { ...STARTER_PKG, name: path.basename(cwd) || "deck" };
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
     console.log("✓ created deck.json + package.json\n  next: npm install  →  npx remotion-deck dev");
   } else {
     console.log("✓ created deck.json\n  next: npx remotion-deck dev");

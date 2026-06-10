@@ -41,7 +41,7 @@ export const createDevServer = async (opts: {
   const server = await createServer({
     configFile: false,
     root: appDir,
-    plugins: [react(), deckMiddleware({ deckFile: opts.deckFile }), chatMiddleware()],
+    plugins: [react(), deckMiddleware({ deckFile: opts.deckFile }), chatMiddleware({ cwd: opts.cwd })],
     optimizeDeps: { include: ["react", "react-dom", "react-dom/client"] },
     server: { port: opts.port ?? 5173, open: opts.open ?? false },
   });
