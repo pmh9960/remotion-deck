@@ -3,13 +3,44 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
 
-const INSTRUCTIONS = `You are editing a presentation deck stored as JSON (the "remotion-deck" schema).
-Apply the user's instruction to the deck and respond with ONLY the full updated deck JSON — no prose,
-no markdown fences, and do not use any tools. Schema: { config?, slides:[{ id, durationInFrames,
-background?, elements:[{ id, type:"text"|"image"|"shape", x, y, w, h, text?|src?|shape?, style?,
-animation? }] }] }. Positions are pixels in a 1920x1080 space. style keys: fontSize, fontWeight,
-color, align, lineHeight, letterSpacing, uppercase, gradientText, background, borderRadius.
-animation.preset: none|fade|rise|slide-left|slide-up|pop|typewriter with a "start" frame. Keep ids stable.`;
+const INSTRUCTIONS = `You edit a presentation deck (the "remotion-deck" JSON schema). You are given the
+CURRENT deck and an instruction. Respond with ONLY a MINIMAL JSON PATCH — no prose, no markdown
+fences, no tools — of exactly this shape:
+{
+  "slides": [ <full objects for ONLY the slides you changed or added, each keeping its "id"> ],
+  "order":  [ <the complete list of slide ids in final order — include this ONLY if you ADD, REMOVE or REORDER slides> ],
+  "config": <object, ONLY if you changed deck-level config/theme>
+}
+Do NOT include slides you did not change (this keeps your answer short). A slide is
+{ id, durationInFrames, background?, elements:[{ id, type:"text"|"image"|"shape", x, y, w, h,
+text?|src?|shape?, style?, animation? }] }. Positions are pixels in a 1920x1080 space. style keys:
+fontSize, fontWeight, color, align, lineHeight, letterSpacing, uppercase, gradientText, background,
+borderRadius. animation.preset: none|fade|rise|slide-left|slide-up|pop|typewriter with a "start"
+frame. Keep ids stable.`;
+
+type DeckLike = { config?: unknown; slides?: { id: string }[] };
+type Patch = { slides?: { id: string }[]; order?: string[]; config?: Record<string, unknown> };
+
+/** Merge a minimal patch from Claude into the current deck. Robust to Claude returning a full
+ *  deck too (overlay-by-id is idempotent). Deletions/reorders are expressed via patch.order. */
+const applyPatch = (deck: DeckLike, patch: Patch): DeckLike => {
+  const result: DeckLike = { ...deck };
+  if (patch.config && typeof patch.config === "object") {
+    result.config = { ...(deck.config as object), ...patch.config };
+  }
+  let slides = [...(deck.slides ?? [])];
+  const byId = new Map(slides.map((s, i) => [s.id, i]));
+  for (const s of patch.slides ?? []) {
+    if (byId.has(s.id)) slides[byId.get(s.id) as number] = s;
+    else slides.push(s);
+  }
+  if (Array.isArray(patch.order)) {
+    const map = new Map(slides.map((s) => [s.id, s]));
+    slides = patch.order.map((id) => map.get(id)).filter(Boolean) as { id: string }[];
+  }
+  result.slides = slides;
+  return result;
+};
 
 /**
  * POST /__chat { message, deck, selection?, scope? } → edits the deck with the user's own Claude Code.
@@ -129,8 +160,9 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
             const text = await ask(prompt);
             const start = text.indexOf("{");
             const end = text.lastIndexOf("}");
-            if (start === -1 || end === -1) { send({ error: "Claude did not return deck JSON." }); return; }
-            send({ deck: JSON.parse(text.slice(start, end + 1)) });
+            if (start === -1 || end === -1) { send({ error: "Claude did not return a patch." }); return; }
+            const patch = JSON.parse(text.slice(start, end + 1)) as Patch;
+            send({ deck: applyPatch(deck as DeckLike, patch) });
           } catch (err) {
             const msg = String((err as Error)?.message ?? err);
             send({
