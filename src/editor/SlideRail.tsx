@@ -20,6 +20,7 @@ const miniBtn: CSSProperties = {
 export const SlideRail = ({
   deck,
   selected,
+  width,
   onSelect,
   onAdd,
   onDuplicate,
@@ -28,6 +29,7 @@ export const SlideRail = ({
 }: {
   deck: DeckJson;
   selected: number;
+  width: number;
   onSelect: (index: number) => void;
   onAdd: () => void;
   onDuplicate: (index: number) => void;
@@ -44,7 +46,7 @@ export const SlideRail = ({
   };
 
   return (
-    <div style={{ width: 208, flex: "0 0 auto", overflowY: "auto", padding: 16, background: "#0d0f16", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ width, flex: "0 0 auto", overflowY: "auto", padding: 16, background: "#0d0f16", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
       {deck.slides.map((slide, i) => (
         <div key={slide.id} onClick={() => onSelect(i)} style={{ marginBottom: 16, cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>

@@ -51,12 +51,14 @@ const Num = ({ label, value, onChange, onCommit }: { label: string; value: numbe
 export const TextPanel = ({
   slide,
   selectedId,
+  width,
   onSelect,
   onChange,
   onCommit,
 }: {
   slide: SlideJson;
   selectedId: string | null;
+  width: number;
   onSelect: (id: string) => void;
   /** transient=true for live keystrokes (collapses into one undo step until onCommit). */
   onChange: (slide: SlideJson, transient?: boolean) => void;
@@ -75,7 +77,7 @@ export const TextPanel = ({
   const texts = slide.elements.filter((e): e is TextElement => e.type === "text");
 
   return (
-    <div style={{ width: 340, flex: "0 0 auto", overflowY: "auto", padding: 20, background: "#0d0f16", borderLeft: "1px solid rgba(255,255,255,0.06)", color: "#e8e9ee" }}>
+    <div style={{ width, flex: "0 0 auto", overflowY: "auto", padding: 20, background: "#0d0f16", borderLeft: "1px solid rgba(255,255,255,0.06)", color: "#e8e9ee" }}>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Slide · {slide.id}</div>
       <div style={{ marginBottom: 22 }}>
         <div style={labelStyle}>Intro duration (frames)</div>

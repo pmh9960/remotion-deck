@@ -18,7 +18,7 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
  * the ❯ prompt, Claude answers (and edits the deck file directly when asked); replies stream in
  * live like a CLI session. Back-and-forth context is kept by the warm server process.
  */
-export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (d: DeckJson) => void; selection: ChatSelection }) => {
+export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; onDeck: (d: DeckJson) => void; selection: ChatSelection; height: number }) => {
   const [msg, setMsg] = useState("");
   const [log, setLog] = useState<Line[]>([]);
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -66,8 +66,8 @@ export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (
   const PROMPT = <span style={{ color: "#5dd08a" }}>❯ </span>;
 
   return (
-    <div style={{ flex: "0 0 auto", borderTop: "1px solid rgba(255,255,255,0.1)", background: "#0a0c10", fontFamily: MONO }}>
-      <div ref={scrollRef} style={{ height: 188, overflowY: "auto", padding: "10px 14px", fontSize: 12.5, lineHeight: 1.55 }}>
+    <div style={{ flex: "0 0 auto", height, display: "flex", flexDirection: "column", borderTop: "1px solid rgba(255,255,255,0.1)", background: "#0a0c10", fontFamily: MONO }}>
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 14px", fontSize: 12.5, lineHeight: 1.55 }}>
         {log.length === 0 && !busy && (
           <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ to send.</div>
         )}

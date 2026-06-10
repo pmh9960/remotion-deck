@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { deckFromJson } from "../deckFromJson.js";
 import { SlideDeck } from "../SlideDeck.js";
 import { resolveDeckConfig, resolveTheme, type SlideElement, type SlideJson } from "../schema.js";
@@ -14,6 +14,10 @@ export const DeckEditor = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [playing, setPlaying] = useState(false);
   const [exportMsg, setExportMsg] = useState("");
+  // Resizable panel sizes (px), dragged via the splitters between panels.
+  const [railW, setRailW] = useState(208);
+  const [panelW, setPanelW] = useState(340);
+  const [chatH, setChatH] = useState(260);
   const wheelLock = useRef(0);
 
   // Global shortcuts: arrows page slides when nothing is selected (Canvas nudges the selection
@@ -218,12 +222,15 @@ export const DeckEditor = () => {
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
+        <SlideRail deck={deck} selected={index} width={railW} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
+        <Splitter dir="col" onDrag={(d) => setRailW((w) => clamp(w + d, 120, 480))} />
         <Canvas slide={slide} slideIndex={index} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onCommit={commit} onWheelNav={wheelNav} />
-        <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} onCommit={commit} />
+        <Splitter dir="col" onDrag={(d) => setPanelW((w) => clamp(w - d, 200, 680))} />
+        <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} width={panelW} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} onCommit={commit} />
       </div>
 
-      <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedIds.length === 1 ? selectedIds[0] : undefined }} />
+      <Splitter dir="row" onDrag={(d) => setChatH((h) => clamp(h - d, 120, 640))} />
+      <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedIds.length === 1 ? selectedIds[0] : undefined }} height={chatH} />
 
       {playing && (
         <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }}>
@@ -255,4 +262,38 @@ const iconBtn: CSSProperties = {
   fontSize: 15,
   cursor: "pointer",
   lineHeight: 1,
+};
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** Thin draggable bar between panels. dir "col" resizes width (drag x), "row" resizes height (drag y). */
+const Splitter = ({ dir, onDrag }: { dir: "col" | "row"; onDrag: (deltaPx: number) => void }) => {
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    let last = dir === "col" ? e.clientX : e.clientY;
+    const move = (ev: PointerEvent) => {
+      const cur = dir === "col" ? ev.clientX : ev.clientY;
+      onDrag(cur - last);
+      last = cur;
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = dir === "col" ? "col-resize" : "row-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      title="Drag to resize"
+      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(99,102,241,0.55)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+      style={{ flex: "0 0 auto", background: "rgba(255,255,255,0.05)", ...(dir === "col" ? { width: 6, cursor: "col-resize" } : { height: 6, cursor: "row-resize" }) }}
+    />
+  );
 };
