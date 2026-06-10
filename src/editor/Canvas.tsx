@@ -60,6 +60,7 @@ export const Canvas = ({
   const [editing, setEditing] = useState<string | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const clipboard = useRef<SlideElement[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
 
@@ -145,12 +146,35 @@ export const Canvas = ({
 
   // Copy a human + Claude-friendly reference to an element (slide number + ids + type, and the
   // image src if any) so it can be pasted into the chat to point Claude at exactly this box.
+  // navigator.clipboard only exists in secure contexts (https / localhost); over plain http to a
+  // remote IP it's undefined, so fall back to the legacy execCommand path.
+  const copyText = (text: string) => {
+    const legacy = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      document.body.removeChild(ta);
+      setToast(ok ? "reference copied" : "copy failed — select & ⌘C");
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => setToast("reference copied")).catch(legacy);
+    } else {
+      legacy();
+    }
+    window.setTimeout(() => setToast(null), 1600);
+  };
   const copyRef = (id: string) => {
     const el = slide.elements.find((e) => e.id === id);
     const kind = el?.type ?? "element";
     const extra = el && el.type === "image" ? ` src=${el.src}` : "";
-    const ref = `slide #${slideIndex + 1} "${slide.id}" › element "${id}" (${kind})${extra}`;
-    navigator.clipboard?.writeText(ref).catch(() => {});
+    copyText(`slide #${slideIndex + 1} "${slide.id}" › element "${id}" (${kind})${extra}`);
   };
 
   // Keyboard: arrow-nudge selected, Ctrl/Cmd+C/V/D, Delete/Backspace.
@@ -428,6 +452,12 @@ export const Canvas = ({
             ))}
           </div>
         </>
+      )}
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 18, left: "50%", transform: "translateX(-50%)", zIndex: 300, background: "#15171f", color: "#e8e9ee", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 8, padding: "8px 16px", fontSize: 13, boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
+          {toast}
+        </div>
       )}
     </div>
   );
