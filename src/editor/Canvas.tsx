@@ -17,6 +17,7 @@ export const Canvas = ({
   selectedIds,
   onSelectIds,
   onChangeSlide,
+  onCommit,
   onWheelNav,
 }: {
   slide: SlideJson;
@@ -24,7 +25,10 @@ export const Canvas = ({
   config: { fps: number; width: number; height: number };
   selectedIds: string[];
   onSelectIds: (ids: string[]) => void;
-  onChangeSlide: (slide: SlideJson) => void;
+  /** transient=true for an in-progress gesture step (collapses into one undo step). */
+  onChangeSlide: (slide: SlideJson, transient?: boolean) => void;
+  /** End the current drag/resize/typing gesture so it becomes one undo step. */
+  onCommit: () => void;
   onWheelNav: (dir: -1 | 1) => void;
 }) => {
   const { ref, size } = useSize();
@@ -76,9 +80,11 @@ export const Canvas = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slide]);
 
+  // patchMany drives the live gesture interactions (drag, resize, inline typing),
+  // so its updates are transient — the gesture collapses into one undo step.
   const patchMany = (patches: Array<{ id: string } & Record<string, unknown>>) => {
     const map = new Map(patches.map((p) => [p.id, p]));
-    onChangeSlide({ ...slide, elements: slide.elements.map((e) => (map.has(e.id) ? ({ ...e, ...map.get(e.id) } as SlideElement) : e)) });
+    onChangeSlide({ ...slide, elements: slide.elements.map((e) => (map.has(e.id) ? ({ ...e, ...map.get(e.id) } as SlideElement) : e)) }, true);
   };
 
   // z-order / duplicate / delete (right-click menu).
@@ -125,7 +131,9 @@ export const Canvas = ({
         const step = e.shiftKey ? 10 : 1;
         const dx = k === "arrowleft" ? -step : k === "arrowright" ? step : 0;
         const dy = k === "arrowup" ? -step : k === "arrowdown" ? step : 0;
-        onChangeSlide({ ...slide, elements: slide.elements.map((el) => (selectedIds.includes(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el)) });
+        // Transient: a burst of nudges (held key / rapid taps) collapses into one
+        // undo step, committed on key release.
+        onChangeSlide({ ...slide, elements: slide.elements.map((el) => (selectedIds.includes(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el)) }, true);
       } else if (mod && k === "c") {
         if (sel.length) clipboard.current = sel;
       } else if (mod && k === "d") {
@@ -134,8 +142,12 @@ export const Canvas = ({
         if (sel.length) { e.preventDefault(); removeIds(selectedIds); }
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(e.key.toLowerCase())) onCommit();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, slide]);
 
@@ -167,18 +179,31 @@ export const Canvas = ({
       const d = drag.current;
       if (!d) return;
       const po = d.originals.get(d.primary) as Orig;
-      const rawDx = Math.round((ev.clientX - d.px) / scale);
-      const rawDy = Math.round((ev.clientY - d.py) / scale);
+      let rawDx = Math.round((ev.clientX - d.px) / scale);
+      let rawDy = Math.round((ev.clientY - d.py) / scale);
       if (d.mode === "resize") {
-        patchMany([{ id: d.primary, w: Math.max(20, po.w + rawDx), h: Math.max(20, po.h + rawDy) }]);
+        // Hold Shift to lock the aspect ratio; the dominant drag axis drives the size.
+        let w = po.w + rawDx;
+        let h = po.h + rawDy;
+        if (ev.shiftKey && po.w > 0 && po.h > 0) {
+          const ratio = po.w / po.h;
+          if (Math.abs(rawDx) >= Math.abs(rawDy)) h = w / ratio;
+          else w = h * ratio;
+        }
+        patchMany([{ id: d.primary, w: Math.max(20, Math.round(w)), h: Math.max(20, Math.round(h)) }]);
         return;
       }
+      // Hold Shift to constrain movement to the dominant axis (skip snapping then).
+      const axisLock = ev.shiftKey;
+      if (axisLock) { if (Math.abs(rawDx) >= Math.abs(rawDy)) rawDy = 0; else rawDx = 0; }
       let nx = po.x + rawDx;
       let ny = po.y + rawDy;
       const gx: number[] = [];
       const gy: number[] = [];
-      for (const off of [0, po.w / 2, po.w]) { const t = xT.find((v) => Math.abs(nx + off - v) <= SNAP); if (t !== undefined) { nx = Math.round(t - off); gx.push(t); break; } }
-      for (const off of [0, po.h / 2, po.h]) { const t = yT.find((v) => Math.abs(ny + off - v) <= SNAP); if (t !== undefined) { ny = Math.round(t - off); gy.push(t); break; } }
+      if (!axisLock) {
+        for (const off of [0, po.w / 2, po.w]) { const t = xT.find((v) => Math.abs(nx + off - v) <= SNAP); if (t !== undefined) { nx = Math.round(t - off); gx.push(t); break; } }
+        for (const off of [0, po.h / 2, po.h]) { const t = yT.find((v) => Math.abs(ny + off - v) <= SNAP); if (t !== undefined) { ny = Math.round(t - off); gy.push(t); break; } }
+      }
       const ddx = nx - po.x;
       const ddy = ny - po.y;
       patchMany(d.ids.map((id) => { const o = d.originals.get(id) as Orig; return { id, x: o.x + ddx, y: o.y + ddy }; }));
@@ -187,6 +212,7 @@ export const Canvas = ({
     const up = () => {
       drag.current = null;
       setGuides({ x: [], y: [] });
+      onCommit(); // close the gesture → one undo step for the whole drag/resize
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -228,7 +254,7 @@ export const Canvas = ({
                 autoFocus
                 value={el.text}
                 onChange={(e) => patchMany([{ id: el.id, text: e.target.value }])}
-                onBlur={() => setEditing(null)}
+                onBlur={() => { setEditing(null); onCommit(); }}
                 onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
                 onPointerDown={(e) => e.stopPropagation()}
                 style={{ ...box, resize: "none", border: "2px solid #6366f1", background: "rgba(6,7,11,0.55)", color: s.color ?? theme.text, fontFamily: s.fontFamily ?? theme.font, fontSize: s.fontSize ?? 40, fontWeight: s.fontWeight ?? 400, lineHeight: s.lineHeight ?? 1.2, textAlign: s.align ?? "left", padding: 0, outline: "none" }}

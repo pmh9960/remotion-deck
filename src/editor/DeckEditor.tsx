@@ -9,7 +9,7 @@ import { TextPanel } from "./TextPanel.js";
 import { useDeckStore } from "./useDeckStore.js";
 
 export const DeckEditor = () => {
-  const { deck, update, undo, redo, save, status } = useDeckStore();
+  const { deck, update, commit, undo, redo, save, status } = useDeckStore();
   const [sel, setSel] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [playing, setPlaying] = useState(false);
@@ -45,8 +45,8 @@ export const DeckEditor = () => {
   const theme = resolveTheme(deck.config?.theme);
   const config = resolveDeckConfig(deck.config);
 
-  const updateSlide = (next: SlideJson) =>
-    update({ ...deck, slides: deck.slides.map((s, i) => (i === index ? next : s)) });
+  const updateSlide = (next: SlideJson, transient?: boolean) =>
+    update({ ...deck, slides: deck.slides.map((s, i) => (i === index ? next : s)) }, transient);
 
   const doExport = async (format: "pdf" | "html") => {
     setExportMsg(format === "pdf" ? "exporting PDF…" : "exporting HTML…");
@@ -206,8 +206,8 @@ export const DeckEditor = () => {
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
-        <Canvas slide={slide} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onWheelNav={wheelNav} />
-        <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} />
+        <Canvas slide={slide} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onCommit={commit} onWheelNav={wheelNav} />
+        <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} onCommit={commit} />
       </div>
 
       <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedIds.length === 1 ? selectedIds[0] : undefined }} />

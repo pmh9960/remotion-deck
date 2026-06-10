@@ -4,8 +4,17 @@ import { loadDeck, saveDeck } from "./api.js";
 
 export type DeckStore = {
   deck: DeckJson | null;
-  /** Replace the deck, record an undo step, and debounce-autosave to the sidecar. */
-  update: (next: DeckJson) => void;
+  /**
+   * Replace the deck and debounce-autosave to the sidecar.
+   * History is **action-based**, not time-based: pass `transient: true` for the
+   * intermediate steps of one continuous gesture (a drag, a resize, a run of
+   * keystrokes) so the whole gesture collapses into a single undo step, closed
+   * by `commit()`. Omit `transient` for a discrete action — each one is its own
+   * undo step.
+   */
+  update: (next: DeckJson, transient?: boolean) => void;
+  /** End the current gesture so the next change begins a fresh undo step. */
+  commit: () => void;
   undo: () => void;
   redo: () => void;
   /** Commit to deck.json (Ctrl+S). */
@@ -15,14 +24,15 @@ export type DeckStore = {
 };
 
 const HISTORY_LIMIT = 100;
-const COALESCE_MS = 500;
 
 export const useDeckStore = (): DeckStore => {
   const [deck, setDeckState] = useState<DeckJson | null>(null);
   const deckRef = useRef<DeckJson | null>(null);
   const past = useRef<DeckJson[]>([]);
   const future = useRef<DeckJson[]>([]);
-  const lastPush = useRef(0);
+  // A gesture is "open" once its first transient update records a baseline; it
+  // stays open (so further moves don't add steps) until commit()/undo()/redo().
+  const txnOpen = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<DeckStore["status"]>("loading");
 
@@ -48,30 +58,46 @@ export const useDeckStore = (): DeckStore => {
     }, 400);
   };
 
-  const update = useCallback((next: DeckJson) => {
-    const prev = deckRef.current;
-    const now = Date.now();
-    if (prev && now - lastPush.current > COALESCE_MS) {
-      past.current.push(prev);
-      if (past.current.length > HISTORY_LIMIT) past.current.shift();
-      lastPush.current = now;
-    }
+  const pushHistory = (prev: DeckJson | null) => {
+    if (!prev) return;
+    past.current.push(prev);
+    if (past.current.length > HISTORY_LIMIT) past.current.shift();
     future.current = [];
+  };
+
+  const update = useCallback((next: DeckJson, transient = false) => {
+    const prev = deckRef.current;
+    if (transient) {
+      // First step of a gesture records the baseline; later steps don't.
+      if (!txnOpen.current) {
+        pushHistory(prev);
+        txnOpen.current = true;
+      }
+    } else {
+      // A discrete action: close any stray gesture and record its own step.
+      txnOpen.current = false;
+      pushHistory(prev);
+    }
     setDeck(next);
     scheduleAutosave(next);
   }, []);
 
+  const commit = useCallback(() => {
+    txnOpen.current = false;
+  }, []);
+
   const undo = useCallback(() => {
     if (!past.current.length || !deckRef.current) return;
+    txnOpen.current = false;
     const prev = past.current.pop() as DeckJson;
     future.current.push(deckRef.current);
-    lastPush.current = 0;
     setDeck(prev);
     scheduleAutosave(prev);
   }, []);
 
   const redo = useCallback(() => {
     if (!future.current.length || !deckRef.current) return;
+    txnOpen.current = false;
     const next = future.current.pop() as DeckJson;
     past.current.push(deckRef.current);
     setDeck(next);
@@ -85,5 +111,5 @@ export const useDeckStore = (): DeckStore => {
     saveDeck(deckRef.current, "commit").then(() => setStatus("saved"));
   }, []);
 
-  return { deck, update, undo, redo, save, status };
+  return { deck, update, commit, undo, redo, save, status };
 };
