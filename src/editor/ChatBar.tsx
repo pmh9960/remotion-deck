@@ -1,11 +1,11 @@
 import { useState, type CSSProperties } from "react";
 import type { DeckJson } from "../schema.js";
-import { chatEdit } from "./api.js";
+import { chatEdit, type ChatSelection } from "./api.js";
 
 type Line = { role: "you" | "claude" | "error"; text: string };
 
 /** Bottom chat bar: type an instruction, Claude edits the deck JSON, changes apply live. */
-export const ChatBar = ({ deck, onDeck }: { deck: DeckJson; onDeck: (d: DeckJson) => void }) => {
+export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (d: DeckJson) => void; selection: ChatSelection }) => {
   const [msg, setMsg] = useState("");
   const [log, setLog] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
@@ -16,7 +16,7 @@ export const ChatBar = ({ deck, onDeck }: { deck: DeckJson; onDeck: (d: DeckJson
     setMsg("");
     setLog((l) => [...l, { role: "you", text: m }]);
     setBusy(true);
-    const reply = await chatEdit(m, deck);
+    const reply = await chatEdit(m, deck, selection);
     if (reply.error) setLog((l) => [...l, { role: "error", text: reply.error as string }]);
     else if (reply.deck) {
       onDeck(reply.deck);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { deckFromJson } from "../deckFromJson.js";
 import { SlideDeck } from "../SlideDeck.js";
-import { resolveDeckConfig, resolveTheme, type SlideJson } from "../schema.js";
+import { resolveDeckConfig, resolveTheme, type SlideElement, type SlideJson } from "../schema.js";
 import { Canvas } from "./Canvas.js";
 import { ChatBar } from "./ChatBar.js";
 import { SlideRail } from "./SlideRail.js";
@@ -56,6 +56,25 @@ export const DeckEditor = () => {
     setSelectedId(null);
   };
 
+  // --- element insert / copy / paste / delete on the current slide ---
+  const uniqueElId = (base: string) => {
+    const ids = new Set(slide.elements.map((e) => e.id));
+    if (!ids.has(base)) return base;
+    let n = 2;
+    while (ids.has(`${base}-${n}`)) n += 1;
+    return `${base}-${n}`;
+  };
+  const addElement = (el: SlideElement) => {
+    const id = uniqueElId(el.type);
+    updateSlide({ ...slide, elements: [...slide.elements, { ...el, id }] });
+    setSelectedId(id);
+  };
+  const insertText = () => addElement({ id: "text", type: "text", x: 660, y: 480, w: 600, h: 130, text: "Text", style: { fontSize: 48, fontWeight: 600 }, animation: { preset: "fade", start: 0 } });
+  const insertRect = () => addElement({ id: "rect", type: "shape", shape: "rect", x: 760, y: 440, w: 400, h: 200, style: { background: "#6366f1", borderRadius: 16 }, animation: { preset: "fade", start: 0 } });
+  const insertPill = () => addElement({ id: "pill", type: "shape", shape: "pill", x: 780, y: 505, w: 320, h: 70, animation: { preset: "fade", start: 0 } });
+  const insertLine = () => addElement({ id: "line", type: "shape", shape: "line", x: 760, y: 540, w: 400, h: 4, style: { background: "#6366f1" }, animation: { preset: "fade", start: 0 } });
+
+
   const uniqueId = (base: string) => {
     const ids = new Set(deck.slides.map((s) => s.id));
     if (!ids.has(base)) return base;
@@ -101,8 +120,16 @@ export const DeckEditor = () => {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui, sans-serif", color: "#e8e9ee" }}>
       <div style={{ height: 48, flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: "#0d0f16", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.02em" }}>
-          remotion-deck <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>editor</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.02em" }}>
+            remotion-deck <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>editor</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={insertText} title="Insert text box" style={iconBtn}>T</button>
+            <button onClick={insertRect} title="Insert rectangle" style={iconBtn}>▭</button>
+            <button onClick={insertPill} title="Insert pill" style={iconBtn}>⬭</button>
+            <button onClick={insertLine} title="Insert line" style={iconBtn}>—</button>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={undo} title="Undo (Ctrl+Z)" style={iconBtn}>↶</button>
@@ -120,7 +147,7 @@ export const DeckEditor = () => {
         <TextPanel slide={slide} selectedId={selectedId} onSelect={setSelectedId} onChange={updateSlide} />
       </div>
 
-      <ChatBar deck={deck} onDeck={update} />
+      <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedId ?? undefined }} />
 
       {playing && (
         <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }}>
