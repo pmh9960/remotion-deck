@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { createServer, type ViteDevServer } from "vite";
 import { chatMiddleware } from "./chatMiddleware.js";
 import { deckMiddleware } from "./deckMiddleware.js";
+import { exportMiddleware } from "./exportMiddleware.js";
 
 const htmlTemplate = (entry: string) => `<!doctype html>
 <html lang="en">
@@ -41,7 +42,7 @@ export const createDevServer = async (opts: {
   const server = await createServer({
     configFile: false,
     root: appDir,
-    plugins: [react(), deckMiddleware({ deckFile: opts.deckFile }), chatMiddleware({ cwd: opts.cwd })],
+    plugins: [react(), deckMiddleware({ deckFile: opts.deckFile }), chatMiddleware({ cwd: opts.cwd }), exportMiddleware({ cwd: opts.cwd })],
     optimizeDeps: { include: ["react", "react-dom", "react-dom/client"] },
     server: { port: opts.port ?? 5173, open: opts.open ?? false },
   });

@@ -35,6 +35,46 @@ export const Canvas = ({
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [menu, setMenu] = useState<Menu | null>(null);
   const clipboard = useRef<SlideElement[]>([]);
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  // Add an image element from a data URL, scaled to fit, centered at (cx,cy) in composition px.
+  const addImage = (src: string, cx?: number, cy?: number) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth || 640;
+      let h = img.naturalHeight || 400;
+      const k = Math.min(1, 900 / w, 700 / h);
+      w = Math.round(w * k);
+      h = Math.round(h * k);
+      const x = Math.round((cx ?? config.width / 2) - w / 2);
+      const y = Math.round((cy ?? config.height / 2) - h / 2);
+      const taken = new Set(slide.elements.map((e) => e.id));
+      let id = "image";
+      let n = 2;
+      while (taken.has(id)) id = `image-${n++}`;
+      onChangeSlide({ ...slide, elements: [...slide.elements, { id, type: "image", src, x, y, w, h, animation: { preset: "fade", start: 0 } }] });
+      onSelectIds([id]);
+    };
+    img.src = src;
+  };
+
+  // Paste an image from the clipboard, or paste copied elements (Ctrl/Cmd+V).
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const tag = document.activeElement?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const imageItem = [...(e.clipboardData?.items ?? [])].find((it) => it.type.startsWith("image/"));
+      if (imageItem) {
+        const file = imageItem.getAsFile();
+        if (file) { e.preventDefault(); const reader = new FileReader(); reader.onload = () => addImage(reader.result as string); reader.readAsDataURL(file); }
+        return;
+      }
+      if (clipboard.current.length) { e.preventDefault(); pasteEls(clipboard.current); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slide]);
 
   const patchMany = (patches: Array<{ id: string } & Record<string, unknown>>) => {
     const map = new Map(patches.map((p) => [p.id, p]));
@@ -88,8 +128,6 @@ export const Canvas = ({
         onChangeSlide({ ...slide, elements: slide.elements.map((el) => (selectedIds.includes(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el)) });
       } else if (mod && k === "c") {
         if (sel.length) clipboard.current = sel;
-      } else if (mod && k === "v") {
-        if (clipboard.current.length) { e.preventDefault(); pasteEls(clipboard.current); }
       } else if (mod && k === "d") {
         if (sel.length) { e.preventDefault(); pasteEls(sel); }
       } else if (e.key === "Delete" || e.key === "Backspace") {
@@ -161,9 +199,21 @@ export const Canvas = ({
       ref={ref}
       onPointerDown={() => { onSelectIds([]); setMenu(null); }}
       onWheel={(e) => { if (Math.abs(e.deltaY) > 8) onWheelNav(e.deltaY > 0 ? 1 : -1); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
+        if (!file) return;
+        const rect = stageRef.current?.getBoundingClientRect();
+        const cx = rect ? (e.clientX - rect.left) / scale : undefined;
+        const cy = rect ? (e.clientY - rect.top) / scale : undefined;
+        const reader = new FileReader();
+        reader.onload = () => addImage(reader.result as string, cx, cy);
+        reader.readAsDataURL(file);
+      }}
       style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}
     >
-      <div style={{ width: config.width, height: config.height, transform: `scale(${scale})`, transformOrigin: "center", position: "relative", flex: "0 0 auto", boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }}>
+      <div ref={stageRef} style={{ width: config.width, height: config.height, transform: `scale(${scale})`, transformOrigin: "center", position: "relative", flex: "0 0 auto", boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }}>
         {renderSlide(slide, lastFrame, config.fps, theme)}
 
         {slide.elements.map((el) => {

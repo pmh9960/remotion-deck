@@ -10,6 +10,7 @@ const usage = () => {
   dev       Open the visual editor (edits save to deck.json)
   present   Play the deck full-screen
   pdf       Render deck.json to presentation.pdf
+  html      Bundle a self-contained presentation.html (share/open anywhere)
   doctor    Tidy the deck: align edges, snap to grid, trim whitespace
   init      Scaffold a new deck (deck.json + package.json)
 
@@ -78,6 +79,16 @@ const cmdServe = async (mode: "editor" | "present") => {
   const { createDevServer } = await import("./server/createDevServer.js");
   await createDevServer({ cwd, deckFile, mode, port, open });
   // Keep the process alive; the Vite server runs until Ctrl+C.
+};
+
+const cmdHtml = async () => {
+  const deckPath = path.resolve(cwd, getFlag("deck") ?? "deck.json");
+  const out = path.resolve(cwd, getFlag("out") ?? "presentation.html");
+  const deck = loadDeck(deckPath);
+  console.log("📦  Bundling self-contained HTML…");
+  const { buildHtml } = await import("./html.js");
+  fs.writeFileSync(out, await buildHtml(deck, cwd));
+  console.log(`✓ wrote ${path.relative(cwd, out)}`);
 };
 
 const cmdDoctor = async () => {
@@ -161,6 +172,9 @@ const main = async () => {
   switch (command) {
     case "pdf":
       await cmdPdf();
+      break;
+    case "html":
+      await cmdHtml();
       break;
     case "dev":
       await cmdServe("editor");

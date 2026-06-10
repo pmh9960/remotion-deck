@@ -17,11 +17,11 @@ export const saveDeck = async (deck: DeckJson, mode: "autosave" | "commit" = "au
 export type ChatReply = { deck?: DeckJson; error?: string };
 export type ChatSelection = { slideId?: string; elementId?: string };
 
-export const chatEdit = async (message: string, deck: DeckJson, selection?: ChatSelection): Promise<ChatReply> => {
+export const chatEdit = async (message: string, deck: DeckJson, selection?: ChatSelection, scope?: "slide" | "deck"): Promise<ChatReply> => {
   const res = await fetch("/__chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message, deck, selection }),
+    body: JSON.stringify({ message, deck, selection, scope }),
   });
   return res.json();
 };

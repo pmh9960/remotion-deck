@@ -13,6 +13,7 @@ export const DeckEditor = () => {
   const [sel, setSel] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [playing, setPlaying] = useState(false);
+  const [exportMsg, setExportMsg] = useState("");
   const wheelLock = useRef(0);
 
   // Global shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo, Ctrl/Cmd+S save.
@@ -46,6 +47,18 @@ export const DeckEditor = () => {
 
   const updateSlide = (next: SlideJson) =>
     update({ ...deck, slides: deck.slides.map((s, i) => (i === index ? next : s)) });
+
+  const doExport = async (format: "pdf" | "html") => {
+    setExportMsg(format === "pdf" ? "exporting PDF…" : "exporting HTML…");
+    try {
+      const res = await fetch("/__export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ format, deck }) });
+      const data = (await res.json()) as { output?: string; error?: string };
+      setExportMsg(data.output ? `saved ${data.output}` : `export failed: ${data.error ?? "unknown"}`);
+    } catch (e) {
+      setExportMsg(`export failed: ${String(e)}`);
+    }
+    setTimeout(() => setExportMsg(""), 5000);
+  };
 
   // Throttled wheel over the canvas changes the current slide.
   const wheelNav = (dir: -1 | 1) => {
@@ -184,6 +197,9 @@ export const DeckEditor = () => {
           <span title="Edits autosave to deck.autosave.json; Ctrl+S writes deck.json" style={{ fontSize: 12, marginLeft: 6, color: status === "saving" ? "#e9b949" : status === "draft" ? "#e9b949" : "rgba(255,255,255,0.45)" }}>
             {status === "saving" ? "saving…" : status === "draft" ? "draft · ⌘S to save" : "saved"}
           </span>
+          {exportMsg && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{exportMsg}</span>}
+          <button onClick={() => doExport("pdf")} title="Export presentation.pdf" style={btn}>⬇ PDF</button>
+          <button onClick={() => doExport("html")} title="Export self-contained presentation.html" style={btn}>⬇ HTML</button>
           <button onClick={() => setPlaying(true)} style={{ ...btn, marginLeft: 6 }}>▶ Play</button>
         </div>
       </div>
