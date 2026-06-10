@@ -34,6 +34,12 @@ export type ElementStyle = {
   /** For shapes / pills. */
   background?: string;
   borderRadius?: number;
+  /**
+   * For images: how the image fills its w×h box (CSS object-fit).
+   * Defaults to "contain" (whole image fits, no cropping; may letterbox if the
+   * box aspect ratio differs from the image). Set "cover" to fill+crop instead.
+   */
+  objectFit?: "contain" | "cover" | "fill" | "none" | "scale-down";
 };
 
 type ElementBase = {

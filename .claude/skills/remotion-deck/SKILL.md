@@ -74,6 +74,10 @@ like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareab
   editor stores pasted/dropped images under `assets/` and references them by path (keeps deck.json
   small); `pdf`/`html` exports re-inline them so the artifact stays self-contained. When you author
   images by hand, prefer a URL or an existing `assets/...` file.
+- Images fit their `w`×`h` box via `style.objectFit` (CSS object-fit), default **`"contain"`**
+  (whole image fits, never cropped; letterboxes if the box aspect ratio differs from the image).
+  So size the box to the image's native aspect ratio for a tight, bar-free fit. Set
+  `style.objectFit: "cover"` to fill+crop instead.
 - `style.gradientText: true` fills text with the accent gradient (great for closing lines).
 - `background`: a color string, or `{ "type": "radial" | "linear", "from", "to", "at" }`.
 

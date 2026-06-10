@@ -45,7 +45,7 @@ const ElementView = ({
     return (
       <img
         src={el.src}
-        style={{ ...box, objectFit: "cover", borderRadius: el.style?.borderRadius }}
+        style={{ ...box, objectFit: el.style?.objectFit ?? "contain", borderRadius: el.style?.borderRadius }}
       />
     );
   }
