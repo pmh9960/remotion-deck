@@ -29,7 +29,7 @@ const preamble = (deckRel: string) =>
  * Keeps ONE warm `claude` process alive for the server's lifetime (stream-json I/O), so only the
  * first turn pays cold-start and later turns share conversation context (real back-and-forth). The
  * process edits the deck FILE directly (permission-mode acceptEdits), loads NO MCP servers, runs a
- * fast model (haiku by default; override REMOTION_DECK_MODEL), is spawned with cwd = the deck
+ * capable model (opus by default; override REMOTION_DECK_MODEL, e.g. sonnet/haiku for speed), is spawned with cwd = the deck
  * project, and is killed when the dev server exits.
  */
 export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin => {
@@ -70,7 +70,7 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
     if (child) return;
     fs.mkdirSync(stateDir, { recursive: true });
     if (!fs.existsSync(emptyMcp)) fs.writeFileSync(emptyMcp, '{"mcpServers":{}}');
-    const model = process.env.REMOTION_DECK_MODEL || "haiku";
+    const model = process.env.REMOTION_DECK_MODEL || "opus";
     const permission = process.env.REMOTION_DECK_PERMISSION || "acceptEdits";
     const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
     child = spawn("claude", args, { cwd: opts.cwd, shell: true, env: process.env });
