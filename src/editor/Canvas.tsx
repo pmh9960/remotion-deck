@@ -32,6 +32,7 @@ const handlePos = (dir: HandleDir): CSSProperties => {
 
 export const Canvas = ({
   slide,
+  slideIndex,
   theme,
   config,
   selectedIds,
@@ -41,6 +42,7 @@ export const Canvas = ({
   onWheelNav,
 }: {
   slide: SlideJson;
+  slideIndex: number;
   theme: ResolvedTheme;
   config: { fps: number; width: number; height: number };
   selectedIds: string[];
@@ -139,6 +141,16 @@ export const Canvas = ({
   const removeIds = (ids: string[]) => {
     onChangeSlide({ ...slide, elements: slide.elements.filter((e) => !ids.includes(e.id)) });
     onSelectIds([]);
+  };
+
+  // Copy a human + Claude-friendly reference to an element (slide number + ids + type, and the
+  // image src if any) so it can be pasted into the chat to point Claude at exactly this box.
+  const copyRef = (id: string) => {
+    const el = slide.elements.find((e) => e.id === id);
+    const kind = el?.type ?? "element";
+    const extra = el && el.type === "image" ? ` src=${el.src}` : "";
+    const ref = `slide #${slideIndex + 1} "${slide.id}" › element "${id}" (${kind})${extra}`;
+    navigator.clipboard?.writeText(ref).catch(() => {});
   };
 
   // Keyboard: arrow-nudge selected, Ctrl/Cmd+C/V/D, Delete/Backspace.
@@ -396,6 +408,7 @@ export const Canvas = ({
           <div onPointerDown={() => setMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 200 }} />
           <div style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 201, background: "#15171f", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: 4, minWidth: 170, boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
             {([
+              ["Copy reference id", () => copyRef(menu.id)],
               ["Bring to front", () => arrange(menu.id, "front")],
               ["Bring forward", () => arrange(menu.id, "forward")],
               ["Send backward", () => arrange(menu.id, "backward")],

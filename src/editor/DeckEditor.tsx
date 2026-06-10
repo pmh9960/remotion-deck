@@ -206,7 +206,7 @@ export const DeckEditor = () => {
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
-        <Canvas slide={slide} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onCommit={commit} onWheelNav={wheelNav} />
+        <Canvas slide={slide} slideIndex={index} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onCommit={commit} onWheelNav={wheelNav} />
         <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} onCommit={commit} />
       </div>
 

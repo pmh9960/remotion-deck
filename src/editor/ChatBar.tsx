@@ -11,11 +11,12 @@ const PRESETS = [
 ];
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const MONO = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
 /**
- * Bottom chat bar: a real, conversational Claude Code session scoped to this deck. You type,
- * Claude answers (and edits the deck file directly when asked); replies stream in live. Back-and-forth
- * context is kept by the warm server process.
+ * Terminal-style chat: a real, conversational Claude Code session scoped to this deck. You type at
+ * the ❯ prompt, Claude answers (and edits the deck file directly when asked); replies stream in
+ * live like a CLI session. Back-and-forth context is kept by the warm server process.
  */
 export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (d: DeckJson) => void; selection: ChatSelection }) => {
   const [msg, setMsg] = useState("");
@@ -27,14 +28,12 @@ export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (
   const startedAt = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Drive the spinner + elapsed clock while a turn is in flight.
   useEffect(() => {
     if (!busy) return;
     const t = setInterval(() => setTick((n) => n + 1), 120);
     return () => clearInterval(t);
   }, [busy]);
 
-  // Keep the transcript pinned to the latest line as it streams.
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [log, streaming]);
 
   const sendText = async (m: string) => {
@@ -46,8 +45,7 @@ export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (
     let acc = "";
     let usedTool = false;
     try {
-      // Snapshot the current in-memory deck to deck.json so Claude reads/edits the latest state.
-      await saveDeck(deck, "commit");
+      await saveDeck(deck, "commit"); // snapshot to deck.json so Claude reads the latest state
       await chatStream(m, selection, scope, (e) => {
         if (e.type === "text") { acc += e.text; setStreaming(acc); }
         else if (e.type === "tool") { usedTool = true; acc += `${acc && !acc.endsWith("\n") ? "\n" : ""}  ⚙ ${e.name}…\n`; setStreaming(acc); }
@@ -55,8 +53,7 @@ export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (
         else if (e.type === "done") { if (!acc.trim() && e.reply) { acc = e.reply; setStreaming(acc); } }
       });
       if (acc.trim()) setLog((l) => [...l, { role: "claude", text: acc.trim() }]);
-      // Claude edits the deck FILE; reload it so the canvas reflects the changes.
-      if (usedTool) onDeck(await loadDeck());
+      if (usedTool) onDeck(await loadDeck()); // Claude edits the deck file → reload it into the canvas
     } catch (err) {
       setLog((l) => [...l, { role: "error", text: String((err as Error)?.message ?? err) }]);
     } finally {
@@ -66,86 +63,90 @@ export const ChatBar = ({ deck, onDeck, selection }: { deck: DeckJson; onDeck: (
   };
 
   const elapsed = ((Date.now() - startedAt.current) / 1000).toFixed(1);
+  const PROMPT = <span style={{ color: "#5dd08a" }}>❯ </span>;
 
   return (
-    <div style={{ flex: "0 0 auto", borderTop: "1px solid rgba(255,255,255,0.08)", background: "#0d0f16" }}>
-      {(log.length > 0 || busy) && (
-        <div ref={scrollRef} style={{ maxHeight: 160, overflowY: "auto", padding: "10px 14px 0", fontSize: 12.5, lineHeight: 1.5 }}>
-          {log.slice(-12).map((l, i) => (
-            <div key={i} style={{ marginBottom: 4, color: l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : "#9a9cf2", whiteSpace: "pre-wrap" }}>
-              <b>{l.role}:</b> {l.text}
-            </div>
-          ))}
-          {busy && (
-            <div style={{ marginBottom: 4, color: "#9a9cf2", whiteSpace: "pre-wrap" }}>
-              <b>claude:</b> {streaming}
-              <span style={{ fontFamily: "monospace", color: "#8b8df0" }}>{streaming ? " " : ""}{SPIN[tick % SPIN.length]}</span>
-              <span style={{ color: "rgba(255,255,255,0.4)" }}> · {elapsed}s</span>
-            </div>
-          )}
-        </div>
-      )}
+    <div style={{ flex: "0 0 auto", borderTop: "1px solid rgba(255,255,255,0.1)", background: "#0a0c10", fontFamily: MONO }}>
+      <div ref={scrollRef} style={{ height: 188, overflowY: "auto", padding: "10px 14px", fontSize: 12.5, lineHeight: 1.55 }}>
+        {log.length === 0 && !busy && (
+          <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ to send.</div>
+        )}
+        {log.slice(-40).map((l, i) => (
+          <div key={i} style={{ whiteSpace: "pre-wrap", color: l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : "#b9c2cc" }}>
+            {l.role === "you" ? PROMPT : l.role === "error" ? <span style={{ color: "#ef6b7d" }}>! </span> : null}
+            {l.text}
+          </div>
+        ))}
+        {busy && (
+          <div style={{ whiteSpace: "pre-wrap", color: "#b9c2cc" }}>
+            {streaming}
+            <span style={{ color: "#8b8df0" }}>{streaming ? " " : ""}{SPIN[tick % SPIN.length]}</span>
+            <span style={{ color: "rgba(255,255,255,0.3)" }}> {elapsed}s</span>
+          </div>
+        )}
+      </div>
 
-      <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "10px 12px 0", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: "1px solid rgba(255,255,255,0.14)" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "0 12px 8px", flexWrap: "wrap", fontSize: 11 }}>
+        <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid rgba(255,255,255,0.14)" }}>
           {(["deck", "slide"] as const).map((s) => (
-            <button key={s} onClick={() => setScope(s)} style={{ ...chip, borderRadius: 0, border: "none", background: scope === s ? "#2a2d3d" : "transparent", color: scope === s ? "#fff" : "rgba(255,255,255,0.6)" }}>
-              {s === "deck" ? "Whole deck" : "This slide"}
+            <button key={s} onClick={() => setScope(s)} style={{ ...chip, borderRadius: 0, border: "none", background: scope === s ? "#23314a" : "transparent", color: scope === s ? "#cfe3ff" : "rgba(255,255,255,0.5)" }}>
+              {s === "deck" ? "deck" : "slide"}
             </button>
           ))}
         </div>
         {PRESETS.map((p) => (
           <button key={p} disabled={busy} onClick={() => sendText(p)} style={chip} title={p}>
-            {p.length > 28 ? p.slice(0, 26) + "…" : p}
+            {p.length > 24 ? p.slice(0, 22) + "…" : p}
           </button>
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 8, padding: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 12px" }}>
+        <span style={{ color: "#5dd08a", fontFamily: MONO, fontSize: 14 }}>❯</span>
         <input
           value={msg}
           disabled={busy}
-          placeholder={busy ? "Claude is working…" : "Chat with Claude about the deck — ask, discuss, or tell it what to change"}
+          placeholder={busy ? "working…" : "message claude"}
           onChange={(e) => setMsg(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { const m = msg.trim(); setMsg(""); sendText(m); } }}
           style={input}
         />
-        <button onClick={() => { const m = msg.trim(); setMsg(""); sendText(m); }} disabled={busy} style={{ ...sendBtn, opacity: busy ? 0.6 : 1 }}>{busy ? "…" : "Send"}</button>
+        <button onClick={() => { const m = msg.trim(); setMsg(""); sendText(m); }} disabled={busy} style={{ ...sendBtn, opacity: busy ? 0.5 : 1 }}>{busy ? "…" : "send ↵"}</button>
       </div>
     </div>
   );
 };
 
 const chip: CSSProperties = {
-  background: "#15171f",
+  background: "#12151c",
   border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 7,
-  color: "rgba(255,255,255,0.75)",
-  fontSize: 12,
-  padding: "5px 10px",
+  borderRadius: 5,
+  color: "rgba(255,255,255,0.65)",
+  fontSize: 11,
+  padding: "4px 8px",
   cursor: "pointer",
-  fontFamily: "inherit",
+  fontFamily: MONO,
 };
 
 const input: CSSProperties = {
   flex: 1,
-  background: "#15171f",
-  border: "1px solid rgba(255,255,255,0.14)",
-  borderRadius: 8,
+  background: "transparent",
+  border: "none",
   color: "#e8e9ee",
   fontSize: 13,
-  padding: "10px 12px",
-  fontFamily: "inherit",
+  padding: "6px 0",
+  fontFamily: MONO,
   outline: "none",
 };
 
 const sendBtn: CSSProperties = {
-  background: "linear-gradient(135deg, #6366f1, #ec4899)",
-  border: "none",
-  color: "#fff",
-  borderRadius: 8,
-  padding: "0 18px",
-  fontSize: 13,
+  background: "transparent",
+  border: "1px solid rgba(255,255,255,0.18)",
+  color: "#cfe3ff",
+  borderRadius: 6,
+  padding: "5px 12px",
+  fontSize: 12,
   fontWeight: 600,
   cursor: "pointer",
+  fontFamily: MONO,
 };
