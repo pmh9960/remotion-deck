@@ -13,6 +13,18 @@ const PRESETS = [
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
+// Persist the transcript so it survives page refreshes (the server's warm Claude process keeps the
+// conversation context across refreshes too, so the session stays continuous). Keyed per origin —
+// one dev server serves one deck, so a single key is fine.
+const LOG_KEY = "remotion-deck:chatlog";
+const LOG_CAP = 300;
+const loadLog = (): Line[] => {
+  try { const v = JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+};
+const saveLog = (log: Line[]) => {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(log.slice(-LOG_CAP))); } catch { /* storage full / unavailable */ }
+};
+
 /**
  * Terminal-style chat: a real, conversational Claude Code session scoped to this deck. You type at
  * the ❯ prompt, Claude answers (and edits the deck file directly when asked); replies stream in
@@ -20,10 +32,10 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
  */
 export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; onDeck: (d: DeckJson) => void; selection: ChatSelection; height: number }) => {
   const [msg, setMsg] = useState("");
-  const [log, setLog] = useState<Line[]>([]);
+  const [log, setLog] = useState<Line[]>(loadLog);
   const [streaming, setStreaming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [scope, setScope] = useState<"deck" | "slide">("deck");
+  const [scope, setScope] = useState<"deck" | "slide">("slide");
   const [tick, setTick] = useState(0);
   const startedAt = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -35,6 +47,9 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
   }, [busy]);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [log, streaming]);
+
+  // Persist transcript across refreshes.
+  useEffect(() => { saveLog(log); }, [log]);
 
   const sendText = async (m: string) => {
     if (!m.trim() || busy) return;
@@ -71,7 +86,7 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
         {log.length === 0 && !busy && (
           <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ to send.</div>
         )}
-        {log.slice(-40).map((l, i) => (
+        {log.slice(-LOG_CAP).map((l, i) => (
           <div key={i} style={{ whiteSpace: "pre-wrap", color: l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : "#b9c2cc" }}>
             {l.role === "you" ? PROMPT : l.role === "error" ? <span style={{ color: "#ef6b7d" }}>! </span> : null}
             {l.text}
@@ -99,6 +114,11 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
             {p.length > 24 ? p.slice(0, 22) + "…" : p}
           </button>
         ))}
+        {log.length > 0 && (
+          <button onClick={() => { setLog([]); saveLog([]); }} style={{ ...chip, marginLeft: "auto", color: "rgba(255,255,255,0.45)" }} title="Clear the chat transcript">
+            clear
+          </button>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 12px" }}>
