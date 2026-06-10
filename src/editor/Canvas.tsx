@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { renderSlide } from "../SlideRenderer.js";
 import type { ResolvedTheme, SlideElement, SlideJson } from "../schema.js";
+import { uploadAsset } from "./api.js";
 import { useSize } from "./useSize.js";
 
 type Orig = { x: number; y: number; w: number; h: number };
@@ -42,9 +43,11 @@ export const Canvas = ({
   const stageRef = useRef<HTMLDivElement>(null);
 
   // Add an image element from a data URL, scaled to fit, centered at (cx,cy) in composition px.
-  const addImage = (src: string, cx?: number, cy?: number) => {
+  // The image is uploaded to assets/ and referenced by path (keeps deck.json small); if the
+  // upload fails we fall back to embedding the data-URL inline.
+  const addImage = (dataUrl: string, cx?: number, cy?: number) => {
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       let w = img.naturalWidth || 640;
       let h = img.naturalHeight || 400;
       const k = Math.min(1, 900 / w, 700 / h);
@@ -52,6 +55,8 @@ export const Canvas = ({
       h = Math.round(h * k);
       const x = Math.round((cx ?? config.width / 2) - w / 2);
       const y = Math.round((cy ?? config.height / 2) - h / 2);
+      let src = dataUrl;
+      try { src = await uploadAsset(dataUrl); } catch { /* keep data-URL fallback */ }
       const taken = new Set(slide.elements.map((e) => e.id));
       let id = "image";
       let n = 2;
@@ -59,7 +64,7 @@ export const Canvas = ({
       onChangeSlide({ ...slide, elements: [...slide.elements, { id, type: "image", src, x, y, w, h, animation: { preset: "fade", start: 0 } }] });
       onSelectIds([id]);
     };
-    img.src = src;
+    img.src = dataUrl;
   };
 
   // Paste an image from the clipboard, or paste copied elements (Ctrl/Cmd+V).
@@ -220,6 +225,59 @@ export const Canvas = ({
     window.addEventListener("pointerup", up);
   };
 
+  // Bounding box of the current multi-selection (≥2), for the group-resize handle.
+  const selEls = slide.elements.filter((e) => selectedIds.includes(e.id));
+  const gbb =
+    selEls.length >= 2
+      ? {
+          minX: Math.min(...selEls.map((e) => e.x)),
+          minY: Math.min(...selEls.map((e) => e.y)),
+          maxX: Math.max(...selEls.map((e) => e.x + e.w)),
+          maxY: Math.max(...selEls.map((e) => e.y + e.h)),
+        }
+      : null;
+
+  // Drag the group handle to scale the whole selection about its top-left corner.
+  // Hold Shift for a uniform (aspect-locked) scale.
+  const beginGroupResize = (e: React.PointerEvent) => {
+    if (!gbb) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setMenu(null);
+    const ids = selectedIds;
+    const originals = new Map(selEls.map((x) => [x.id, { x: x.x, y: x.y, w: x.w, h: x.h }]));
+    const gw = gbb.maxX - gbb.minX;
+    const gh = gbb.maxY - gbb.minY;
+    const px = e.clientX;
+    const py = e.clientY;
+    const move = (ev: PointerEvent) => {
+      let sx = gw > 0 ? (gw + (ev.clientX - px) / scale) / gw : 1;
+      let sy = gh > 0 ? (gh + (ev.clientY - py) / scale) / gh : 1;
+      if (ev.shiftKey) { const s = Math.max(sx, sy); sx = s; sy = s; }
+      sx = Math.max(0.05, sx);
+      sy = Math.max(0.05, sy);
+      patchMany(
+        ids.map((id) => {
+          const o = originals.get(id) as Orig;
+          return {
+            id,
+            x: Math.round(gbb.minX + (o.x - gbb.minX) * sx),
+            y: Math.round(gbb.minY + (o.y - gbb.minY) * sy),
+            w: Math.max(20, Math.round(o.w * sx)),
+            h: Math.max(20, Math.round(o.h * sy)),
+          };
+        }),
+      );
+    };
+    const up = () => {
+      onCommit();
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
     <div
       ref={ref}
@@ -257,7 +315,7 @@ export const Canvas = ({
                 onBlur={() => { setEditing(null); onCommit(); }}
                 onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
                 onPointerDown={(e) => e.stopPropagation()}
-                style={{ ...box, resize: "none", border: "2px solid #6366f1", background: "rgba(6,7,11,0.55)", color: s.color ?? theme.text, fontFamily: s.fontFamily ?? theme.font, fontSize: s.fontSize ?? 40, fontWeight: s.fontWeight ?? 400, lineHeight: s.lineHeight ?? 1.2, textAlign: s.align ?? "left", padding: 0, outline: "none" }}
+                style={{ ...box, resize: "none", border: "2px solid #6366f1", background: "rgba(6,7,11,0.55)", color: s.color ?? theme.text, fontFamily: s.fontFamily ?? theme.font, fontSize: s.fontSize ?? 40, fontWeight: s.fontWeight ?? 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: s.underline ? "underline" : "none", letterSpacing: s.letterSpacing, lineHeight: s.lineHeight ?? 1.2, textAlign: s.align ?? "left", padding: 0, outline: "none" }}
               />
             );
           }
@@ -276,6 +334,12 @@ export const Canvas = ({
             </div>
           );
         })}
+
+        {gbb && (
+          <div style={{ position: "absolute", left: gbb.minX, top: gbb.minY, width: gbb.maxX - gbb.minX, height: gbb.maxY - gbb.minY, outline: "1px solid rgba(99,102,241,0.6)", pointerEvents: "none", zIndex: 40 }}>
+            <div onPointerDown={beginGroupResize} style={{ position: "absolute", right: -8, bottom: -8, width: 16, height: 16, borderRadius: 3, background: "#6366f1", border: "2px solid #fff", cursor: "nwse-resize", pointerEvents: "auto" }} />
+          </div>
+        )}
 
         {guides.x.map((gx, i) => (
           <div key={`gx${i}`} style={{ position: "absolute", left: gx, top: 0, width: 1, height: config.height, background: "#ec4899", pointerEvents: "none", zIndex: 50 }} />

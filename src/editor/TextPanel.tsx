@@ -12,6 +12,33 @@ const PRESETS: AnimationPreset[] = ["none", "fade", "rise", "slide-left", "slide
 const labelStyle: CSSProperties = { fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)", marginBottom: 4 };
 const inputStyle: CSSProperties = { width: "100%", boxSizing: "border-box", background: "#15171f", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "#e8e9ee", fontSize: 13, padding: "7px 9px", fontFamily: "inherit" };
 
+/** A toggle button (B / I / U / bullets) that highlights when active. */
+const toggleStyle = (active: boolean, extra?: CSSProperties): CSSProperties => ({
+  ...inputStyle,
+  width: "auto",
+  minWidth: 34,
+  flex: "0 0 auto",
+  cursor: "pointer",
+  textAlign: "center",
+  background: active ? "#3a3d72" : "#15171f",
+  borderColor: active ? "#6366f1" : "rgba(255,255,255,0.12)",
+  ...extra,
+});
+
+const BULLET = "•   ";
+const isBulleted = (text: string): boolean => {
+  const lines = text.split("\n").filter((l) => l.trim());
+  return lines.length > 0 && lines.every((l) => /^•\s+/.test(l));
+};
+/** Toggle "•   " prefixes on every non-blank line. */
+const toggleBullets = (text: string): string => {
+  const on = isBulleted(text);
+  return text
+    .split("\n")
+    .map((l) => (l.trim() ? (on ? l.replace(/^•\s+/, "") : /^•\s+/.test(l) ? l : BULLET + l) : l))
+    .join("\n");
+};
+
 const Num = ({ label, value, onChange, onCommit }: { label: string; value: number; onChange: (n: number) => void; onCommit?: () => void }) => (
   <label style={{ flex: 1, minWidth: 0 }}>
     <div style={labelStyle}>{label}</div>
@@ -73,6 +100,19 @@ export const TextPanel = ({
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                 <Num label="Font size" value={sel.style?.fontSize ?? 40} onChange={(fontSize) => setStyle(sel.id, { fontSize }, sel.style)} onCommit={onCommit} />
                 <Num label="Weight" value={sel.style?.fontWeight ?? 400} onChange={(fontWeight) => setStyle(sel.id, { fontWeight }, sel.style)} onCommit={onCommit} />
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                <button title="Bold" onClick={() => setStyleOnce(sel.id, { fontWeight: (sel.style?.fontWeight ?? 400) >= 700 ? 400 : 700 }, sel.style)} style={toggleStyle((sel.style?.fontWeight ?? 400) >= 700, { fontWeight: 800 })}>B</button>
+                <button title="Italic" onClick={() => setStyleOnce(sel.id, { italic: !sel.style?.italic }, sel.style)} style={toggleStyle(!!sel.style?.italic, { fontStyle: "italic" })}>I</button>
+                <button title="Underline" onClick={() => setStyleOnce(sel.id, { underline: !sel.style?.underline }, sel.style)} style={toggleStyle(!!sel.style?.underline, { textDecoration: "underline" })}>U</button>
+                <button title="Bullet list" onClick={() => setOnce(sel.id, { text: toggleBullets(sel.text) })} style={toggleStyle(isBulleted(sel.text))}>• List</button>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <Num label="Line height ×100" value={Math.round((sel.style?.lineHeight ?? 1.2) * 100)} onChange={(v) => setStyle(sel.id, { lineHeight: Math.max(0.5, v / 100) }, sel.style)} onCommit={onCommit} />
+                <label style={{ flex: 1, minWidth: 0 }}>
+                  <div style={labelStyle}>Letter spacing</div>
+                  <input value={sel.style?.letterSpacing ?? ""} placeholder="0.02em" onChange={(e) => setStyle(sel.id, { letterSpacing: e.target.value || undefined }, sel.style)} onBlur={onCommit} style={inputStyle} />
+                </label>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <div style={labelStyle}>Align</div>

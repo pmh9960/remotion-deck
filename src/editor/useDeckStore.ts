@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckJson } from "../schema.js";
-import { loadDeck, saveDeck } from "./api.js";
+import { gcAssets, loadDeck, saveDeck } from "./api.js";
 
 export type DeckStore = {
   deck: DeckJson | null;
@@ -34,7 +34,28 @@ export const useDeckStore = (): DeckStore => {
   // stays open (so further moves don't add steps) until commit()/undo()/redo().
   const txnOpen = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<DeckStore["status"]>("loading");
+
+  // Assets still reachable = referenced by the current deck OR any state we can undo/redo back
+  // to. Anything outside this set has fallen out of history and can be reclaimed on the server.
+  const reachableAssets = (): string[] => {
+    const set = new Set<string>();
+    const scan = (d: DeckJson | null) => {
+      if (!d) return;
+      for (const s of d.slides) for (const el of s.elements) {
+        if (el.type === "image" && el.src.startsWith("assets/")) set.add(el.src);
+      }
+    };
+    scan(deckRef.current);
+    past.current.forEach(scan);
+    future.current.forEach(scan);
+    return [...set];
+  };
+  const scheduleGc = () => {
+    if (gcTimer.current) clearTimeout(gcTimer.current);
+    gcTimer.current = setTimeout(() => gcAssets(reachableAssets()), 1500);
+  };
 
   const setDeck = (d: DeckJson) => {
     deckRef.current = d;
@@ -80,6 +101,7 @@ export const useDeckStore = (): DeckStore => {
     }
     setDeck(next);
     scheduleAutosave(next);
+    scheduleGc();
   }, []);
 
   const commit = useCallback(() => {
@@ -93,6 +115,7 @@ export const useDeckStore = (): DeckStore => {
     future.current.push(deckRef.current);
     setDeck(prev);
     scheduleAutosave(prev);
+    scheduleGc();
   }, []);
 
   const redo = useCallback(() => {
@@ -102,6 +125,7 @@ export const useDeckStore = (): DeckStore => {
     past.current.push(deckRef.current);
     setDeck(next);
     scheduleAutosave(next);
+    scheduleGc();
   }, []);
 
   const save = useCallback(() => {
@@ -109,6 +133,7 @@ export const useDeckStore = (): DeckStore => {
     if (timer.current) clearTimeout(timer.current);
     setStatus("saving");
     saveDeck(deckRef.current, "commit").then(() => setStatus("saved"));
+    gcAssets(reachableAssets());
   }, []);
 
   return { deck, update, commit, undo, redo, save, status };

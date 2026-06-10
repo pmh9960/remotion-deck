@@ -43,13 +43,15 @@ const cmdPdf = async () => {
   // Write a temporary Remotion entry INSIDE the project so that "remotion-deck"
   // resolves from the project's node_modules. The deck JSON is embedded as a
   // literal to avoid any import-path resolution for the data file.
+  const { inlineAssets } = await import("./assets.js");
+  const embedded = inlineAssets(deck, cwd);
   const tmpDir = path.join(cwd, ".remotion-deck");
   fs.mkdirSync(tmpDir, { recursive: true });
   const entry = path.join(tmpDir, "entry.tsx");
   fs.writeFileSync(
     entry,
     `import { registerDeck, deckFromJson } from "remotion-deck";\n` +
-      `const deck = ${JSON.stringify(deck)};\n` +
+      `const deck = ${JSON.stringify(embedded)};\n` +
       `const { slides, config } = deckFromJson(deck);\n` +
       `registerDeck(slides, config);\n`,
   );

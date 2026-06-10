@@ -94,6 +94,7 @@ const ElementView = ({
         letterSpacing: s.letterSpacing,
         textAlign: s.align ?? "left",
         fontStyle: s.italic ? "italic" : "normal",
+        textDecoration: s.underline ? "underline" : "none",
         textTransform: s.uppercase ? "uppercase" : "none",
         whiteSpace: "pre-wrap",
         ...gradient,

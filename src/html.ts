@@ -1,14 +1,18 @@
 import { build } from "esbuild";
+import { inlineAssets } from "./assets.js";
+import type { DeckJson } from "./schema.js";
 
 /**
  * Bundle a deck into ONE self-contained .html file (React + Remotion player + the deck data
  * inlined), so it can be shared/opened anywhere with no server. resolveDir must be the deck
- * project (so "remotion-deck" and its peers resolve from its node_modules).
+ * project (so "remotion-deck" and its peers resolve from its node_modules, and assets/ files
+ * referenced by the deck can be inlined as data-URLs).
  */
-export const buildHtml = async (deck: unknown, resolveDir: string): Promise<string> => {
+export const buildHtml = async (deck: DeckJson, resolveDir: string): Promise<string> => {
+  const embedded = inlineAssets(deck, resolveDir);
   const entry = `import { createRoot } from "react-dom/client";
 import { SlideDeck, deckFromJson } from "remotion-deck";
-const deck = ${JSON.stringify(deck)};
+const deck = ${JSON.stringify(embedded)};
 const { slides, config } = deckFromJson(deck);
 createRoot(document.getElementById("root")).render(<SlideDeck slides={slides} config={config} />);
 `;

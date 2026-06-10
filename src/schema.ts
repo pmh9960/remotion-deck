@@ -27,6 +27,7 @@ export type ElementStyle = {
   letterSpacing?: string;
   fontFamily?: string;
   italic?: boolean;
+  underline?: boolean;
   uppercase?: boolean;
   /** Fill text with the theme's accent gradient instead of a solid color. */
   gradientText?: boolean;

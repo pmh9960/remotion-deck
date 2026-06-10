@@ -14,6 +14,27 @@ export const saveDeck = async (deck: DeckJson, mode: "autosave" | "commit" = "au
   });
 };
 
+/** Upload an image data-URL; the server stores it as a file and returns its `assets/<file>` path. */
+export const uploadAsset = async (dataUrl: string): Promise<string> => {
+  const res = await fetch("/__asset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dataUrl }),
+  });
+  const data = (await res.json()) as { path?: string };
+  if (!data.path) throw new Error("asset upload failed");
+  return data.path;
+};
+
+/** Tell the server which `assets/<file>` refs are still reachable; it deletes the rest. */
+export const gcAssets = async (keep: string[]): Promise<void> => {
+  await fetch("/__assets/gc", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ keep }),
+  }).catch(() => {});
+};
+
 export type ChatReply = { deck?: DeckJson; error?: string };
 export type ChatSelection = { slideId?: string; elementId?: string };
 
