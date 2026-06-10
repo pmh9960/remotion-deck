@@ -40,7 +40,8 @@ export type AskOption = { label: string; description?: string };
 export type AskQuestion = { question: string; header?: string; multiSelect?: boolean; options: AskOption[] };
 export type ChatEvent =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool"; name: string; detail: string }
   | { type: "ask"; id: string; questions: AskQuestion[] }
   | { type: "done"; reply?: string }
   | { type: "error"; error: string };

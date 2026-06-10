@@ -40,7 +40,23 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
   const emptyMcp = path.join(stateDir, "empty-mcp.json");
   const deckRel = path.relative(opts.cwd, opts.deckFile) || path.basename(opts.deckFile);
 
-  type Ev = { type: "text"; text: string } | { type: "tool"; name: string } | { type: "ask"; id: string; questions: unknown };
+  type Ev =
+    | { type: "text"; text: string }
+    | { type: "thinking"; text: string }
+    | { type: "tool"; name: string; detail: string }
+    | { type: "ask"; id: string; questions: unknown };
+
+  // A short, human-readable summary of a tool call's target (file / command / pattern / url).
+  const toolDetail = (input?: Record<string, unknown>): string => {
+    if (!input || typeof input !== "object") return "";
+    const f = input.file_path ?? input.path ?? input.notebook_path;
+    if (typeof f === "string") return f.split("/").slice(-2).join("/");
+    for (const k of ["command", "pattern", "query", "url", "prompt"]) {
+      const v = input[k];
+      if (typeof v === "string") return v.length > 64 ? v.slice(0, 61) + "…" : v;
+    }
+    return "";
+  };
   type Pending = { onEvent: (e: Ev) => void; resolve: (s: string) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
 
   let child: ChildProcess | null = null;
@@ -85,17 +101,17 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: { questions?: unknown } }> } };
+        let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; thinking?: string; name?: string; id?: string; input?: Record<string, unknown> }> } };
         try { ev = JSON.parse(line); } catch { continue; }
         if (!pending) continue;
         if (ev.type === "assistant" && ev.message?.content) {
           for (const block of ev.message.content) {
             if (block.type === "text" && block.text) pending.onEvent({ type: "text", text: block.text });
+            else if (block.type === "thinking" && block.thinking) pending.onEvent({ type: "thinking", text: block.thinking });
             else if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
-              // Interactive question — forward it to the client; the warm process now waits on stdin
-              // for the answer (delivered via POST /__chat/answer → tool_result).
+              // Interactive question — forward it to the client so it can show the options as buttons.
               pending.onEvent({ type: "ask", id: block.id, questions: block.input?.questions });
-            } else if (block.type === "tool_use" && block.name) pending.onEvent({ type: "tool", name: block.name });
+            } else if (block.type === "tool_use" && block.name) pending.onEvent({ type: "tool", name: block.name, detail: toolDetail(block.input) });
           }
         } else if (ev.type === "result") {
           const p = pending;

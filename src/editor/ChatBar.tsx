@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { DeckJson } from "../schema.js";
 import { chatStream, loadDeck, saveDeck, stopChat, type AskQuestion, type ChatSelection } from "./api.js";
 
-type Line = { role: "you" | "claude" | "error"; text: string };
+type Line = { role: "you" | "claude" | "error" | "trace" | "think"; text: string };
 
 const PRESETS = [
   "Make this look more polished and professional",
@@ -73,16 +73,19 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
     let asked = false;
     try {
       await saveDeck(deck, "commit"); // snapshot to deck.json so Claude reads the latest state
+      // Flush any buffered reply text as a claude line; tool/thinking steps interleave as their own
+      // persistent trace lines (so the full Read/Edit/think trace stays in the transcript).
+      const flush = () => { if (acc.trim()) setLog((l) => [...l, { role: "claude", text: acc.trim() }]); acc = ""; setStreaming(""); };
       await chatStream(m, selection, scope, (e) => {
         if (e.type === "text") { acc += e.text; setStreaming(acc); }
-        else if (e.type === "ask") { setAsk({ id: e.id, questions: e.questions }); setPicks({}); asked = true; }
-        else if (e.type === "tool") { usedTool = true; acc += `${acc && !acc.endsWith("\n") ? "\n" : ""}  ⚙ ${e.name}…\n`; setStreaming(acc); }
-        else if (e.type === "error") { setLog((l) => [...l, { role: "error", text: e.error }]); }
+        else if (e.type === "thinking") { flush(); setLog((l) => [...l, { role: "think", text: e.text }]); }
+        else if (e.type === "tool") { usedTool = true; flush(); setLog((l) => [...l, { role: "trace", text: `${e.name}${e.detail ? "  " + e.detail : ""}` }]); }
+        else if (e.type === "ask") { flush(); setAsk({ id: e.id, questions: e.questions }); setPicks({}); asked = true; }
+        else if (e.type === "error") { flush(); setLog((l) => [...l, { role: "error", text: e.error }]); }
         else if (e.type === "done") { if (!acc.trim() && e.reply) { acc = e.reply; setStreaming(acc); } }
       }, ctrl.signal);
-      // When Claude asked a question, the options are shown as buttons — suppress the model's
-      // filler text ("go ahead and pick…") and keep the question pending for the user to answer.
-      if (acc.trim() && !asked) setLog((l) => [...l, { role: "claude", text: acc.trim() }]);
+      // When Claude asked a question, suppress the filler reply (options are shown as buttons).
+      if (!asked) flush();
       if (usedTool) onDeck(await loadDeck()); // Claude edits the deck file → reload it into the canvas
     } catch (err) {
       if (ctrl.signal.aborted) setLog((l) => [...l, { role: "claude", text: (acc.trim() ? acc.trim() + "\n" : "") + "  ⛔ stopped" }]);
@@ -166,12 +169,19 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
         {log.length === 0 && !busy && (
           <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ to send.</div>
         )}
-        {log.slice(-LOG_CAP).map((l, i) => (
-          <div key={i} style={{ whiteSpace: "pre-wrap", color: l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : "#b9c2cc" }}>
-            {l.role === "you" ? PROMPT : l.role === "error" ? <span style={{ color: "#ef6b7d" }}>! </span> : null}
-            {l.text}
-          </div>
-        ))}
+        {log.slice(-LOG_CAP).map((l, i) => {
+          const color = l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : l.role === "trace" ? "#79a8c9" : l.role === "think" ? "rgba(255,255,255,0.4)" : "#b9c2cc";
+          const prefix = l.role === "you" ? PROMPT
+            : l.role === "error" ? <span style={{ color: "#ef6b7d" }}>! </span>
+            : l.role === "trace" ? <span style={{ color: "#5a7d96" }}>⚙ </span>
+            : l.role === "think" ? <span style={{ color: "rgba(255,255,255,0.3)" }}>💭 </span>
+            : null;
+          return (
+            <div key={i} style={{ whiteSpace: "pre-wrap", color, fontStyle: l.role === "think" ? "italic" : "normal", fontSize: l.role === "trace" || l.role === "think" ? 11.5 : undefined }}>
+              {prefix}{l.text}
+            </div>
+          );
+        })}
         {busy && (
           <div style={{ whiteSpace: "pre-wrap", color: "#b9c2cc" }}>
             {streaming}
