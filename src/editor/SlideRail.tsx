@@ -2,8 +2,6 @@ import type { CSSProperties } from "react";
 import { renderSlide } from "../SlideRenderer.js";
 import { resolveDeckConfig, resolveTheme, type DeckJson } from "../schema.js";
 
-const THUMB_W = 168;
-
 const miniBtn: CSSProperties = {
   flex: 1,
   background: "#15171f",
@@ -38,7 +36,10 @@ export const SlideRail = ({
 }) => {
   const cfg = resolveDeckConfig(deck.config);
   const theme = resolveTheme(deck.config?.theme);
-  const scale = THUMB_W / cfg.width;
+  // Thumbnails fill the rail width (minus the 16px padding each side) so widening the sidebar
+  // grows the previews.
+  const thumbW = Math.max(120, width - 32);
+  const scale = thumbW / cfg.width;
   const thumbH = cfg.height * scale;
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -53,13 +54,13 @@ export const SlideRail = ({
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontVariantNumeric: "tabular-nums" }}>{i + 1}</span>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{slide.id}</span>
           </div>
-          <div style={{ width: THUMB_W, height: thumbH, position: "relative", overflow: "hidden", borderRadius: 6, outline: i === selected ? "2px solid #6366f1" : "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ width: thumbW, height: thumbH, position: "relative", overflow: "hidden", borderRadius: 6, outline: i === selected ? "2px solid #6366f1" : "1px solid rgba(255,255,255,0.08)" }}>
             <div style={{ width: cfg.width, height: cfg.height, transform: `scale(${scale})`, transformOrigin: "top left", position: "absolute", top: 0, left: 0 }}>
               {renderSlide(slide, slide.durationInFrames - 1, cfg.fps, theme)}
             </div>
           </div>
           {i === selected && (
-            <div style={{ display: "flex", gap: 4, marginTop: 6, width: THUMB_W }}>
+            <div style={{ display: "flex", gap: 4, marginTop: 6, width: thumbW }}>
               <button title="Move up" onClick={stop(() => onMove(i, -1))} style={miniBtn}>↑</button>
               <button title="Move down" onClick={stop(() => onMove(i, 1))} style={miniBtn}>↓</button>
               <button title="Duplicate" onClick={stop(() => onDuplicate(i))} style={miniBtn}>⧉</button>
@@ -68,7 +69,7 @@ export const SlideRail = ({
           )}
         </div>
       ))}
-      <button onClick={onAdd} style={{ width: THUMB_W, marginTop: 4, padding: "9px 0", background: "#15171f", border: "1px dashed rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", borderRadius: 6, fontSize: 13, cursor: "pointer" }}>
+      <button onClick={onAdd} style={{ width: thumbW, marginTop: 4, padding: "9px 0", background: "#15171f", border: "1px dashed rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", borderRadius: 6, fontSize: 13, cursor: "pointer" }}>
         + Add slide
       </button>
     </div>
