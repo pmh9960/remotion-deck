@@ -9,10 +9,54 @@ It is a **thin wrapper over Remotion's public API**. Remotion is a `peerDependen
 deck rides along with whatever Remotion version your project installs — run `npm update remotion`
 and you are on the new version, with no wrapper release required.
 
-## Install
+## Quick start: deck.json + visual editor
+
+The fastest way to use it is **data, not code**: a single `deck.json` that the CLI edits
+visually (PowerPoint-style), plays, and exports.
 
 ```bash
-npm i remotion-deck remotion @remotion/player
+# Not yet on npm — install straight from GitHub (its prepare script builds on install).
+npm i pmh9960/remotion-deck remotion @remotion/player
+npm i -D @remotion/bundler @remotion/renderer   # only needed for PDF export
+
+npx remotion-deck init      # scaffold deck.json (+ package.json)
+npx remotion-deck dev       # open the visual editor
+npx remotion-deck pdf       # → presentation.pdf   (or: html → self-contained .html)
+```
+
+In the editor: drag/resize (Shift = axis/aspect lock), multi-select + align/distribute, rich
+text (B/I/U, bullets), insert shapes/images (paste or drop), per-action undo, and a chat box
+that edits the deck. You and Claude edit the *same* `deck.json`.
+
+### Claude Code skill
+
+Installing the package does **not** install the skill (it's a Claude Code artifact). Add it with:
+
+```bash
+npx remotion-deck skill            # this project  → ./.claude/skills
+npx remotion-deck skill --global   # all projects  → ~/.claude/skills
+```
+
+Then Claude can generate and restyle `deck.json` from a prompt.
+
+### Headless / remote (Linux server)
+
+`dev`, `present`, and `html` need no browser on the host — bind the network and open it remotely:
+
+```bash
+remotion-deck dev --host    # prints a Network URL; open it from any machine
+```
+
+Only `pdf` renders through a headless Chromium (Remotion auto-downloads it; on minimal Linux you
+may need libs like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareable
+artifact on a server.
+
+## Install (library API)
+
+For projects that import `SlideDeck`/`registerDeck` and write slides as React components:
+
+```bash
+npm i remotion-deck remotion @remotion/player   # or: pmh9960/remotion-deck while unpublished
 # for PDF export you also need:
 npm i -D @remotion/bundler @remotion/renderer
 ```

@@ -9,10 +9,53 @@
 덱은 프로젝트가 설치한 Remotion 버전을 그대로 탑니다 — `npm update remotion` 한 번이면 새 버전으로
 넘어가고, wrapper를 다시 릴리즈할 필요가 없습니다.
 
-## 설치
+## 빠른 시작: deck.json + 비주얼 에디터
+
+가장 빠른 사용법은 **코드가 아니라 데이터** — CLI가 비주얼로(파워포인트처럼) 편집·재생·내보내기
+하는 단일 `deck.json` 하나입니다.
 
 ```bash
-npm i remotion-deck remotion @remotion/player
+# 아직 npm 미배포 — GitHub에서 바로 설치 (prepare 스크립트가 설치 시 빌드).
+npm i pmh9960/remotion-deck remotion @remotion/player
+npm i -D @remotion/bundler @remotion/renderer   # PDF 변환에만 필요
+
+npx remotion-deck init      # deck.json (+ package.json) 생성
+npx remotion-deck dev       # 비주얼 에디터 열기
+npx remotion-deck pdf       # → presentation.pdf   (또는 html → 단일 .html)
+```
+
+에디터에서: 드래그/리사이즈(Shift = 축/비율 고정), 다중선택 + 정렬/분배, 리치 텍스트(B/I/U·
+글머리표), 도형·이미지 삽입(붙여넣기·드롭), 액션 단위 undo, 그리고 덱을 고쳐주는 채팅창. 사용자와
+Claude가 **같은** `deck.json`을 편집합니다.
+
+### Claude Code 스킬
+
+패키지를 설치해도 스킬은 자동 설치되지 **않습니다**(스킬은 Claude Code 아티팩트). 다음으로 추가:
+
+```bash
+npx remotion-deck skill            # 이 프로젝트  → ./.claude/skills
+npx remotion-deck skill --global   # 모든 프로젝트 → ~/.claude/skills
+```
+
+그러면 Claude가 프롬프트만으로 `deck.json`을 생성·리스타일할 수 있습니다.
+
+### Headless / 원격 (리눅스 서버)
+
+`dev`, `present`, `html`은 호스트에 브라우저가 필요 없습니다 — 네트워크에 바인딩해 원격 접속:
+
+```bash
+remotion-deck dev --host    # Network URL 출력; 다른 기기에서 열기
+```
+
+`pdf`만 headless Chromium을 거칩니다(Remotion이 자동 다운로드; 최소 리눅스에선 `libnss3`/`libatk`
+같은 라이브러리가 필요할 수 있음). 서버에서 공유용 산출물은 **의존성 없는** `html`이 가장 간편합니다.
+
+## 설치 (라이브러리 API)
+
+`SlideDeck`/`registerDeck`을 import해서 슬라이드를 React 컴포넌트로 작성하는 프로젝트용:
+
+```bash
+npm i remotion-deck remotion @remotion/player   # 미배포 동안은: pmh9960/remotion-deck
 # PDF 변환에는 추가로:
 npm i -D @remotion/bundler @remotion/renderer
 ```
