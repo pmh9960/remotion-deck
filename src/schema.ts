@@ -83,6 +83,9 @@ export type ThemeJson = {
   dim?: string;
   bg?: string;
   font?: string;
+  /** Optional webfont stylesheet URL (e.g. a Google Fonts link). When set, the editor and HTML
+   *  export load it so `font` can name a non-system family (incl. Korean fonts). */
+  fontUrl?: string;
 };
 
 export type DeckConfigJson = {
@@ -126,6 +129,7 @@ export const DEFAULT_THEME: ResolvedTheme = {
   dim: "rgba(31, 41, 55, 0.55)",
   bg: "#ffffff",
   font: "Segoe UI, system-ui, -apple-system, sans-serif",
+  fontUrl: "",
 };
 
 export const resolveTheme = (theme?: ThemeJson): ResolvedTheme => ({

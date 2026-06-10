@@ -27,12 +27,14 @@ createRoot(document.getElementById("root")).render(<SlideDeck slides={slides} co
     define: { "process.env.NODE_ENV": '"production"' },
   });
   const js = result.outputFiles[0].text;
+  const fontUrl = deck.config?.theme?.fontUrl;
+  const fontLink = fontUrl ? `\n    <link rel="stylesheet" href="${fontUrl}" />` : "";
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Presentation</title>
+    <title>Presentation</title>${fontLink}
     <style>html,body,#root{height:100%;margin:0;background:#0b0d12;overflow:hidden}</style>
   </head>
   <body>

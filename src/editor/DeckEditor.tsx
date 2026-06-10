@@ -53,6 +53,20 @@ export const DeckEditor = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo, save, selectedIds, deck]);
 
+  // Load the deck's webfont (config.theme.fontUrl) so a non-system `font` family renders.
+  useEffect(() => {
+    const url = deck?.config?.theme?.fontUrl;
+    if (!url) return;
+    let link = document.getElementById("deck-font") as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
+      link.id = "deck-font";
+      link.rel = "stylesheet";
+      document.head.appendChild(link);
+    }
+    if (link.getAttribute("href") !== url) link.setAttribute("href", url);
+  }, [deck?.config?.theme?.fontUrl]);
+
   if (!deck) {
     return <div style={{ color: "#888", padding: 40, fontFamily: "system-ui" }}>Loading deck…</div>;
   }
