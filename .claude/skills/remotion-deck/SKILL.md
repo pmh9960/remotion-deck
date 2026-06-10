@@ -47,12 +47,12 @@ like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareab
 ```jsonc
 {
   "config": { "fps": 30, "width": 1920, "height": 1080,
-    "theme": { "accent1": "#6366f1", "accent2": "#ec4899", "text": "#f5f6fa", "bg": "#0b0d12", "font": "Segoe UI, system-ui, sans-serif" } },
+    "theme": { "accent1": "#005abe", "accent2": "#3d86d6", "text": "#1f2937", "bg": "#ffffff", "font": "Segoe UI, system-ui, sans-serif" } },
   "slides": [
     {
       "id": "title",                  // unique, stable
       "durationInFrames": 90,         // intro animation length (30fps → 90 = 3s)
-      "background": { "type": "radial", "from": "#11141d", "to": "#0b0d12", "at": "18% 0%" },
+      "background": { "type": "radial", "from": "#ffffff", "to": "#eef3fb", "at": "18% 0%" },
       "elements": [ /* see below */ ]
     }
   ]
@@ -63,7 +63,7 @@ like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareab
 ```jsonc
 { "id": "title", "type": "text", "x": 140, "y": 520, "w": 1620, "h": 200,
   "text": "Line one\nLine two",
-  "style": { "fontSize": 88, "fontWeight": 800, "color": "#f5f6fa", "align": "left",
+  "style": { "fontSize": 88, "fontWeight": 800, "color": "#1f2937", "align": "left",
              "lineHeight": 1.1, "letterSpacing": "0.02em", "italic": false,
              "underline": false, "uppercase": false, "gradientText": false },
   "animation": { "preset": "rise", "start": 0 } }
@@ -86,15 +86,37 @@ like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareab
 
 ## Authoring conventions (match the built-in look)
 
-- Left margin `x: 140`. Title slide: eyebrow (fontSize 26, `uppercase`, color `#6366f1`) → title
+- Left margin `x: 140`. Title slide: eyebrow (fontSize 26, `uppercase`, color `#005abe`) → title
   (fontSize 88–96, fontWeight 800) → a `shape` `pill` rule (h 6) → subtitle (fontSize 34, dim).
 - Content slide: eyebrow/section label → heading (fontSize 60, weight 800) → sub (28, dim) →
   bullets as text elements prefixed `"•   "` (fontSize 32–38).
 - Stagger reveals: give each element an increasing `animation.start` (~6–16 frames apart) so
   content builds in. Use `rise`/`slide-up` for body, `fade` for labels, `pop`/`gradientText` for
   closings.
-- Dim text color: `"rgba(245,246,250,0.6)"`. Accents: `#6366f1` (indigo), `#ec4899` (pink).
 - Array order == presentation order == PDF page order.
+
+### Palette & color (light theme — keep it simple)
+
+The default theme is **light** (bg `#ffffff`, text `#1f2937`, dim `rgba(31,41,55,0.55)`). One project
+palette, used sparingly. **Default everything to blue**; reach for the others only when the meaning
+calls for it.
+
+| role | vivid (text / emphasis) | soft tint (block / shape fill) |
+|---|---|---|
+| blue — primary / positive (use almost always) | `#005abe` | `#d9e6f5` |
+| red — negative (rare: warnings / "bad") | `#e6222e` | `#fbdee0` |
+| yellow — baseline / incidental highlight | `#ffc000` | `#fff6d9` |
+| green — special case (the special one) | `#00b464` | `#d9f4e8` |
+
+- **Vivid colors are for TEXT / thin accents** (eyebrows, key numbers, the pill rule, gradientText).
+  They're punchy — don't fill big blocks with them.
+- **For a colored BLOCK / shape behind dark text, use the soft tint** (the `…Soft` column) with text
+  in `#1f2937`. Keeps it readable and calm.
+- **Personalization (this user):** simple. Blue for essentially everything; **red only** when you
+  genuinely need a negative signal; **green** for the rare special/highlighted case; **yellow** for a
+  baseline that must stand out. A normal baseline / neutral element stays **gray** (`#6b7280`), not a
+  color. Avoid more than ~2 accent colors on one slide.
+- These tokens also live in code as `PALETTE` in `schema.ts` (vivid + `…Soft` tints).
 
 ## Typical flows
 

@@ -97,12 +97,32 @@ export type DeckJson = {
 
 export type ResolvedTheme = Required<ThemeJson>;
 
+/**
+ * Project palette. The four vivid colors are for TEXT / emphasis; the matching soft tints (~15%
+ * toward white) are for BLOCK / shape fills behind dark text. Default to blue; use the others
+ * sparingly. (Authoring guidance lives in the skill.)
+ *  - blue   #005abe  primary accent / positive   (use for almost everything)
+ *  - red    #e6222e  secondary accent / negative (rare — warnings / "bad")
+ *  - yellow #ffc000  baseline / incidental highlight (default baseline is gray; yellow when it must stand out)
+ *  - green  #00b464  special-case accent          (the special one)
+ */
+export const PALETTE = {
+  blue: "#005abe",
+  red: "#e6222e",
+  yellow: "#ffc000",
+  green: "#00b464",
+  blueSoft: "#d9e6f5",
+  redSoft: "#fbdee0",
+  yellowSoft: "#fff6d9",
+  greenSoft: "#d9f4e8",
+} as const;
+
 export const DEFAULT_THEME: ResolvedTheme = {
-  accent1: "#6366f1",
-  accent2: "#ec4899",
-  text: "#f5f6fa",
-  dim: "rgba(245, 246, 250, 0.6)",
-  bg: "#0b0d12",
+  accent1: PALETTE.blue,
+  accent2: "#3d86d6", // lighter blue — keeps the accent gradient (gradientText / shape fills) calmly blue
+  text: "#1f2937",
+  dim: "rgba(31, 41, 55, 0.55)",
+  bg: "#ffffff",
   font: "Segoe UI, system-ui, -apple-system, sans-serif",
 };
 

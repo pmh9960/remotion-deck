@@ -125,9 +125,9 @@ const STARTER_DECK = {
     {
       id: "title",
       durationInFrames: 90,
-      background: { type: "radial", from: "#11141d", to: "#0b0d12", at: "18% 0%" },
+      background: { type: "radial", from: "#ffffff", to: "#eef3fb", at: "18% 0%" },
       elements: [
-        { id: "eyebrow", type: "text", x: 140, y: 470, w: 1500, h: 40, text: "My talk", style: { fontSize: 26, fontWeight: 700, letterSpacing: "0.28em", color: "#6366f1", uppercase: true }, animation: { preset: "fade", start: 18 } },
+        { id: "eyebrow", type: "text", x: 140, y: 470, w: 1500, h: 40, text: "My talk", style: { fontSize: 26, fontWeight: 700, letterSpacing: "0.28em", color: "#005abe", uppercase: true }, animation: { preset: "fade", start: 18 } },
         { id: "title", type: "text", x: 140, y: 520, w: 1620, h: 200, text: "Your title here", style: { fontSize: 96, fontWeight: 800 }, animation: { preset: "rise", start: 0 } },
         { id: "rule", type: "shape", shape: "pill", x: 140, y: 740, w: 340, h: 6, animation: { preset: "slide-left", start: 16 } },
       ],
