@@ -5,11 +5,30 @@ import { uploadAsset } from "./api.js";
 import { useSize } from "./useSize.js";
 
 type Orig = { x: number; y: number; w: number; h: number };
-type Drag = { ids: string[]; mode: "move" | "resize"; primary: string; px: number; py: number; originals: Map<string, Orig> };
+type HandleDir = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+type Drag = { ids: string[]; mode: "move" | "resize"; primary: string; px: number; py: number; originals: Map<string, Orig>; handle?: HandleDir };
 type Menu = { x: number; y: number; id: string };
 
 const SNAP = 8;
 const menuItem = (danger?: boolean): CSSProperties => ({ padding: "7px 12px", fontSize: 13, borderRadius: 5, cursor: "pointer", color: danger ? "#ef6b7d" : "#e8e9ee" });
+
+// 8-direction resize handles. hx/hy mark which edges a handle moves (-1 left/top, +1 right/bottom, 0 none).
+const HANDLES: HandleDir[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const HANDLE_VEC: Record<HandleDir, { hx: -1 | 0 | 1; hy: -1 | 0 | 1 }> = {
+  nw: { hx: -1, hy: -1 }, n: { hx: 0, hy: -1 }, ne: { hx: 1, hy: -1 },
+  e: { hx: 1, hy: 0 }, se: { hx: 1, hy: 1 }, s: { hx: 0, hy: 1 },
+  sw: { hx: -1, hy: 1 }, w: { hx: -1, hy: 0 },
+};
+const HANDLE_CURSOR: Record<HandleDir, string> = {
+  nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize",
+  n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize",
+};
+const handlePos = (dir: HandleDir): CSSProperties => {
+  const s: CSSProperties = {};
+  if (dir.includes("w")) s.left = -8; else if (dir.includes("e")) s.right = -8; else s.left = "calc(50% - 7px)";
+  if (dir.includes("n")) s.top = -8; else if (dir.includes("s")) s.bottom = -8; else s.top = "calc(50% - 7px)";
+  return s;
+};
 
 export const Canvas = ({
   slide,
@@ -156,7 +175,7 @@ export const Canvas = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, slide]);
 
-  const begin = (e: React.PointerEvent, el: SlideElement, mode: "move" | "resize") => {
+  const begin = (e: React.PointerEvent, el: SlideElement, mode: "move" | "resize", handle?: HandleDir) => {
     if (editing) return;
     e.stopPropagation();
     e.preventDefault();
@@ -175,7 +194,7 @@ export const Canvas = ({
     }
 
     const originals = new Map(slide.elements.filter((x) => ids.includes(x.id)).map((x) => [x.id, { x: x.x, y: x.y, w: x.w, h: x.h }]));
-    drag.current = { ids, mode, primary: el.id, px: e.clientX, py: e.clientY, originals };
+    drag.current = { ids, mode, primary: el.id, px: e.clientX, py: e.clientY, originals, handle };
     const others = slide.elements.filter((o) => !ids.includes(o.id));
     const xT = [config.width / 2, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w])];
     const yT = [config.height / 2, ...others.flatMap((o) => [o.y, o.y + o.h / 2, o.y + o.h])];
@@ -187,15 +206,32 @@ export const Canvas = ({
       let rawDx = Math.round((ev.clientX - d.px) / scale);
       let rawDy = Math.round((ev.clientY - d.py) / scale);
       if (d.mode === "resize") {
-        // Hold Shift to lock the aspect ratio; the dominant drag axis drives the size.
-        let w = po.w + rawDx;
-        let h = po.h + rawDy;
+        // Per-handle resize. Shift = aspect-lock; Ctrl/Cmd = resize about the center (anchor fixed).
+        const hv = HANDLE_VEC[d.handle ?? "se"];
+        const fromCenter = ev.ctrlKey || ev.metaKey;
+        const dW = hv.hx * rawDx; // width growth along the drag direction
+        const dH = hv.hy * rawDy;
+        let w = po.w + (fromCenter ? 2 * dW : dW);
+        let h = po.h + (fromCenter ? 2 * dH : dH);
         if (ev.shiftKey && po.w > 0 && po.h > 0) {
           const ratio = po.w / po.h;
-          if (Math.abs(rawDx) >= Math.abs(rawDy)) h = w / ratio;
+          if (hv.hx !== 0 && hv.hy === 0) h = w / ratio;        // horizontal edge handle drives width
+          else if (hv.hy !== 0 && hv.hx === 0) w = h * ratio;   // vertical edge handle drives height
+          else if (Math.abs(dW) >= Math.abs(dH)) h = w / ratio; // corner: dominant axis
           else w = h * ratio;
         }
-        patchMany([{ id: d.primary, w: Math.max(20, Math.round(w)), h: Math.max(20, Math.round(h)) }]);
+        w = Math.max(20, Math.round(w));
+        h = Math.max(20, Math.round(h));
+        let x = po.x;
+        let y = po.y;
+        if (fromCenter) {
+          x = Math.round(po.x + po.w / 2 - w / 2);
+          y = Math.round(po.y + po.h / 2 - h / 2);
+        } else {
+          if (hv.hx === -1) x = Math.round(po.x + po.w - w); // dragging left edge → right edge fixed
+          if (hv.hy === -1) y = Math.round(po.y + po.h - h); // dragging top edge → bottom edge fixed
+        }
+        patchMany([{ id: d.primary, x, y, w, h }]);
         return;
       }
       // Hold Shift to constrain movement to the dominant axis (skip snapping then).
@@ -298,7 +334,9 @@ export const Canvas = ({
       style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}
     >
       <div ref={stageRef} style={{ width: config.width, height: config.height, transform: `scale(${scale})`, transformOrigin: "center", position: "relative", flex: "0 0 auto", boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }}>
-        {renderSlide(slide, lastFrame, config.fps, theme)}
+        {/* While inline-editing a text element, omit it from the background render so the
+            live <textarea> doesn't show a stale duplicate behind it (no ghost). */}
+        {renderSlide(editing ? { ...slide, elements: slide.elements.filter((e) => e.id !== editing) } : slide, lastFrame, config.fps, theme)}
 
         {slide.elements.map((el) => {
           const active = selectedIds.includes(el.id);
@@ -328,9 +366,13 @@ export const Canvas = ({
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onSelectIds([el.id]); setMenu({ x: e.clientX, y: e.clientY, id: el.id }); }}
               style={{ ...box, cursor: "move", outline: active ? "3px solid #6366f1" : "1px dashed rgba(255,255,255,0.18)", outlineOffset: 3 }}
             >
-              {active && selectedIds.length === 1 && (
-                <div onPointerDown={(e) => begin(e, el, "resize")} style={{ position: "absolute", right: -8, bottom: -8, width: 16, height: 16, borderRadius: 3, background: "#6366f1", border: "2px solid #fff", cursor: "nwse-resize" }} />
-              )}
+              {active && selectedIds.length === 1 && HANDLES.map((dir) => (
+                <div
+                  key={dir}
+                  onPointerDown={(e) => begin(e, el, "resize", dir)}
+                  style={{ position: "absolute", ...handlePos(dir), width: 14, height: 14, borderRadius: 3, background: "#6366f1", border: "2px solid #fff", cursor: HANDLE_CURSOR[dir] }}
+                />
+              ))}
             </div>
           );
         })}

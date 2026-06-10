@@ -35,14 +35,43 @@ export const gcAssets = async (keep: string[]): Promise<void> => {
   }).catch(() => {});
 };
 
-export type ChatReply = { deck?: DeckJson; error?: string };
 export type ChatSelection = { slideId?: string; elementId?: string };
+export type ChatEvent =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string }
+  | { type: "done"; reply?: string }
+  | { type: "error"; error: string };
 
-export const chatEdit = async (message: string, deck: DeckJson, selection?: ChatSelection, scope?: "slide" | "deck"): Promise<ChatReply> => {
+/**
+ * Stream one turn of the deck-editing Claude Code session. The server edits the deck FILE directly
+ * and streams newline-delimited JSON events (text chunks, tool markers, then done/error). After a
+ * `done`, reload the deck (loadDeck) to pick up the file edits. Commit the current in-memory deck
+ * to disk (saveDeck(deck, "commit")) BEFORE calling this so Claude reads the latest state.
+ */
+export const chatStream = async (
+  message: string,
+  selection: ChatSelection | undefined,
+  scope: "slide" | "deck" | undefined,
+  onEvent: (e: ChatEvent) => void,
+): Promise<void> => {
   const res = await fetch("/__chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message, deck, selection, scope }),
+    body: JSON.stringify({ message, selection, scope }),
   });
-  return res.json();
+  if (!res.body) { onEvent({ type: "error", error: "no response stream" }); return; }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) { try { onEvent(JSON.parse(line) as ChatEvent); } catch { /* skip partial */ } }
+    }
+  }
 };

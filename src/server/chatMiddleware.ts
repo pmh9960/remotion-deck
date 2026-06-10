@@ -3,63 +3,48 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
 
-const INSTRUCTIONS = `You edit a presentation deck (the "remotion-deck" JSON schema). You are given the
-CURRENT deck and an instruction. Respond with ONLY a MINIMAL JSON PATCH — no prose, no markdown
-fences, no tools — of exactly this shape:
-{
-  "slides": [ <full objects for ONLY the slides you changed or added, each keeping its "id"> ],
-  "order":  [ <the complete list of slide ids in final order — include this ONLY if you ADD, REMOVE or REORDER slides> ],
-  "config": <object, ONLY if you changed deck-level config/theme>
-}
-Do NOT include slides you did not change (this keeps your answer short). A slide is
-{ id, durationInFrames, background?, elements:[{ id, type:"text"|"image"|"shape", x, y, w, h,
-text?|src?|shape?, style?, animation? }] }. Positions are pixels in a 1920x1080 space. style keys:
-fontSize, fontWeight, color, align, lineHeight, letterSpacing, uppercase, gradientText, background,
-borderRadius. animation.preset: none|fade|rise|slide-left|slide-up|pop|typewriter with a "start"
-frame. Keep ids stable.`;
-
-type DeckLike = { config?: unknown; slides?: { id: string }[] };
-type Patch = { slides?: { id: string }[]; order?: string[]; config?: Record<string, unknown> };
-
-/** Merge a minimal patch from Claude into the current deck. Robust to Claude returning a full
- *  deck too (overlay-by-id is idempotent). Deletions/reorders are expressed via patch.order. */
-const applyPatch = (deck: DeckLike, patch: Patch): DeckLike => {
-  const result: DeckLike = { ...deck };
-  if (patch.config && typeof patch.config === "object") {
-    result.config = { ...(deck.config as object), ...patch.config };
-  }
-  let slides = [...(deck.slides ?? [])];
-  const byId = new Map(slides.map((s, i) => [s.id, i]));
-  for (const s of patch.slides ?? []) {
-    if (byId.has(s.id)) slides[byId.get(s.id) as number] = s;
-    else slides.push(s);
-  }
-  if (Array.isArray(patch.order)) {
-    const map = new Map(slides.map((s) => [s.id, s]));
-    slides = patch.order.map((id) => map.get(id)).filter(Boolean) as { id: string }[];
-  }
-  result.slides = slides;
-  return result;
-};
+/** First-turn preamble: turns the warm process into a deck-aware Claude Code session that edits
+ *  the deck file directly. Sent once; the warm process keeps context for later turns. */
+const preamble = (deckRel: string) =>
+  `You are Claude, embedded as the chat assistant inside the "remotion-deck" visual slide editor — ` +
+  `treat this as a normal Claude Code session: converse naturally and use your tools.\n` +
+  `The presentation is the file \`${deckRel}\` in your working directory. It is remotion-deck JSON: ` +
+  `a top-level { config, slides: [ { id, durationInFrames, background?, elements: [ { id, ` +
+  `type:"text"|"image"|"shape", x, y, w, h, text?|src?|shape?, style?, animation? } ] } ] }. ` +
+  `Positions are pixels in a 1920x1080 space; style keys include fontSize, fontWeight, color, align, ` +
+  `lineHeight, letterSpacing, uppercase, gradientText, background, borderRadius, objectFit; ` +
+  `animation.preset is one of none|fade|rise|slide-left|slide-up|pop|typewriter with a "start" frame.\n` +
+  `To change the deck, EDIT \`${deckRel}\` directly (Read it, then Edit/Write) — the editor live-reloads ` +
+  `the file the moment you finish, so the user sees your changes. Keep element and slide ids stable. ` +
+  `When the user just asks a question, answer conversationally without editing. Keep replies concise.`;
 
 /**
- * POST /__chat { message, deck, selection?, scope? } → edits the deck with the user's own Claude Code.
+ * POST /__chat { message, selection?, scope? } → streams a turn of the user's own Claude Code,
+ * as newline-delimited JSON (application/x-ndjson). Each line is one event:
+ *   {"type":"text","text":"…"}   incremental assistant text
+ *   {"type":"tool","name":"Edit"} a tool the assistant invoked (e.g. editing the deck file)
+ *   {"type":"done"}               the turn finished (client should reload the deck file)
+ *   {"type":"error","error":"…"}  the turn failed
  *
  * Keeps ONE warm `claude` process alive for the server's lifetime (stream-json I/O), so only the
- * first turn pays cold-start; later turns are fast and share conversation context. The process:
- *  - loads NO MCP servers (the deck-editing agent doesn't need them; keeps the first turn lighter)
- *  - runs a fast model (haiku by default; override with REMOTION_DECK_MODEL)
- *  - is spawned with cwd = the deck project, so its session lives under that project (not scattered)
- *  - is killed when the dev server exits (so the launcher dying takes the child with it)
+ * first turn pays cold-start and later turns share conversation context (real back-and-forth). The
+ * process edits the deck FILE directly (permission-mode acceptEdits), loads NO MCP servers, runs a
+ * fast model (haiku by default; override REMOTION_DECK_MODEL), is spawned with cwd = the deck
+ * project, and is killed when the dev server exits.
  */
-export const chatMiddleware = (opts: { cwd: string }): Plugin => {
+export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin => {
   const stateDir = path.join(opts.cwd, ".remotion-deck");
   const emptyMcp = path.join(stateDir, "empty-mcp.json");
+  const deckRel = path.relative(opts.cwd, opts.deckFile) || path.basename(opts.deckFile);
+
+  type Ev = { type: "text"; text: string } | { type: "tool"; name: string };
+  type Pending = { onEvent: (e: Ev) => void; resolve: (s: string) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
 
   let child: ChildProcess | null = null;
   let buffer = "";
-  let pending: { resolve: (s: string) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> } | null = null;
+  let pending: Pending | null = null;
   let chain: Promise<unknown> = Promise.resolve();
+  let turns = 0;
 
   const failPending = (e: Error) => {
     if (pending) { const p = pending; pending = null; clearTimeout(p.timer); p.reject(e); }
@@ -77,7 +62,6 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
     }
   };
 
-  // The warm Claude process must not outlive the dev server.
   process.once("exit", killChild);
   process.once("SIGINT", () => { killChild(); process.exit(0); });
   process.once("SIGTERM", () => { killChild(); process.exit(0); });
@@ -87,8 +71,10 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
     fs.mkdirSync(stateDir, { recursive: true });
     if (!fs.existsSync(emptyMcp)) fs.writeFileSync(emptyMcp, '{"mcpServers":{}}');
     const model = process.env.REMOTION_DECK_MODEL || "haiku";
-    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
+    const permission = process.env.REMOTION_DECK_PERMISSION || "acceptEdits";
+    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
     child = spawn("claude", args, { cwd: opts.cwd, shell: true, env: process.env });
+    turns = 0;
     child.stdout?.on("data", (d) => {
       buffer += d.toString();
       let nl;
@@ -96,9 +82,15 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        let ev: { type?: string; result?: string };
+        let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
         try { ev = JSON.parse(line); } catch { continue; }
-        if (ev.type === "result" && pending) {
+        if (!pending) continue;
+        if (ev.type === "assistant" && ev.message?.content) {
+          for (const block of ev.message.content) {
+            if (block.type === "text" && block.text) pending.onEvent({ type: "text", text: block.text });
+            else if (block.type === "tool_use" && block.name) pending.onEvent({ type: "tool", name: block.name });
+          }
+        } else if (ev.type === "result") {
           const p = pending;
           pending = null;
           clearTimeout(p.timer);
@@ -110,18 +102,21 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
     child.on("error", (e) => { child = null; failPending(e as Error); });
   };
 
-  const askOnce = (prompt: string) =>
+  // Run one turn through the warm process, forwarding streamed events to onEvent. Resolves with the
+  // final result text once the turn completes.
+  const askOnce = (prompt: string, onEvent: (e: Ev) => void) =>
     new Promise<string>((resolve, reject) => {
       ensureProc();
       if (!child || !child.stdin) { reject(new Error("could not start claude")); return; }
-      const timer = setTimeout(() => failPending(new Error("claude timed out")), 180000);
-      pending = { resolve, reject, timer };
+      const timer = setTimeout(() => failPending(new Error("claude timed out")), 300000);
+      pending = { onEvent, resolve, reject, timer };
+      turns += 1;
       child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n");
     });
 
-  // Serialize requests through the single warm process.
-  const ask = (prompt: string): Promise<string> => {
-    const result = chain.then(() => askOnce(prompt));
+  // Serialize turns through the single warm process.
+  const ask = (prompt: string, onEvent: (e: Ev) => void): Promise<string> => {
+    const result = chain.then(() => askOnce(prompt, onEvent));
     chain = result.catch(() => {});
     return result;
   };
@@ -135,41 +130,40 @@ export const chatMiddleware = (opts: { cwd: string }): Plugin => {
         let body = "";
         req.on("data", (chunk) => (body += chunk));
         req.on("end", async () => {
-          const send = (obj: unknown) => {
-            res.statusCode = 200;
-            res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify(obj));
-          };
+          res.statusCode = 200;
+          res.setHeader("content-type", "application/x-ndjson");
+          res.setHeader("cache-control", "no-cache");
+          const write = (obj: unknown) => res.write(JSON.stringify(obj) + "\n");
           try {
-            const { message, deck, selection, scope } = JSON.parse(body) as {
+            const { message, selection, scope } = JSON.parse(body) as {
               message: string;
-              deck: unknown;
               selection?: { slideId?: string; elementId?: string };
               scope?: "slide" | "deck";
             };
             const ctx = selection?.elementId
-              ? `\nThe user currently has element "${selection.elementId}" on slide "${selection.slideId}" selected; "this"/"it" likely refers to it.`
+              ? ` (the user currently has element "${selection.elementId}" on slide "${selection.slideId}" selected; "this"/"it" likely refers to it)`
               : selection?.slideId
-                ? `\nThe user is currently viewing slide "${selection.slideId}".`
+                ? ` (the user is currently viewing slide "${selection.slideId}")`
                 : "";
             const scopeNote = scope === "slide" && selection?.slideId
-              ? `\nOnly modify the slide with id "${selection.slideId}"; leave every other slide unchanged.`
+              ? ` Only modify the slide with id "${selection.slideId}".`
               : "";
-            const prompt = `${INSTRUCTIONS}\n\nCurrent deck JSON:\n${JSON.stringify(deck)}${ctx}${scopeNote}\n\nInstruction: ${message}`;
+            // First turn carries the deck-aware preamble; later turns are raw messages (warm
+            // process already knows the deck file and keeps conversation context).
+            const prompt = (turns === 0 ? `${preamble(deckRel)}\n\n` : "") + `User${ctx}:${scopeNote} ${message}`;
 
-            const text = await ask(prompt);
-            const start = text.indexOf("{");
-            const end = text.lastIndexOf("}");
-            if (start === -1 || end === -1) { send({ error: "Claude did not return a patch." }); return; }
-            const patch = JSON.parse(text.slice(start, end + 1)) as Patch;
-            send({ deck: applyPatch(deck as DeckLike, patch) });
+            const final = await ask(prompt, (e) => write(e));
+            write({ type: "done", reply: final });
+            res.end();
           } catch (err) {
             const msg = String((err as Error)?.message ?? err);
-            send({
+            write({
+              type: "error",
               error: msg.includes("ENOENT")
                 ? "`claude` CLI not found on PATH. Start `remotion-deck dev` from a shell where `claude` works."
                 : msg,
             });
+            res.end();
           }
         });
       });
