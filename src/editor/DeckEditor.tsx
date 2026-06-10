@@ -11,7 +11,7 @@ import { useDeckStore } from "./useDeckStore.js";
 export const DeckEditor = () => {
   const { deck, update, undo, redo, save, status } = useDeckStore();
   const [sel, setSel] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [playing, setPlaying] = useState(false);
   const wheelLock = useRef(0);
 
@@ -53,7 +53,7 @@ export const DeckEditor = () => {
     if (now - wheelLock.current < 300) return;
     wheelLock.current = now;
     setSel(Math.max(0, Math.min(deck.slides.length - 1, index + dir)));
-    setSelectedId(null);
+    setSelectedIds([]);
   };
 
   // --- element insert / copy / paste / delete on the current slide ---
@@ -67,7 +67,39 @@ export const DeckEditor = () => {
   const addElement = (el: SlideElement) => {
     const id = uniqueElId(el.type);
     updateSlide({ ...slide, elements: [...slide.elements, { ...el, id }] });
-    setSelectedId(id);
+    setSelectedIds([id]);
+  };
+
+  // --- align / distribute selected elements ---
+  const alignSelected = (how: "left" | "hcenter" | "right" | "top" | "vmiddle" | "bottom") => {
+    const sel = slide.elements.filter((e) => selectedIds.includes(e.id));
+    if (sel.length < 2) return;
+    const left = Math.min(...sel.map((e) => e.x));
+    const right = Math.max(...sel.map((e) => e.x + e.w));
+    const top = Math.min(...sel.map((e) => e.y));
+    const bottom = Math.max(...sel.map((e) => e.y + e.h));
+    const place = (e: SlideElement) => {
+      if (how === "left") return { x: left };
+      if (how === "right") return { x: right - e.w };
+      if (how === "hcenter") return { x: Math.round((left + right) / 2 - e.w / 2) };
+      if (how === "top") return { y: top };
+      if (how === "bottom") return { y: bottom - e.h };
+      return { y: Math.round((top + bottom) / 2 - e.h / 2) };
+    };
+    updateSlide({ ...slide, elements: slide.elements.map((e) => (selectedIds.includes(e.id) ? { ...e, ...place(e) } : e)) });
+  };
+  const distributeSelected = (axis: "h" | "v") => {
+    const sel = slide.elements.filter((e) => selectedIds.includes(e.id));
+    if (sel.length < 3) return;
+    const sorted = [...sel].sort((a, b) => (axis === "h" ? a.x - b.x : a.y - b.y));
+    const start = axis === "h" ? sorted[0].x : sorted[0].y;
+    const end = axis === "h" ? sorted[sorted.length - 1].x + sorted[sorted.length - 1].w : sorted[sorted.length - 1].y + sorted[sorted.length - 1].h;
+    const sizeSum = sorted.reduce((s, e) => s + (axis === "h" ? e.w : e.h), 0);
+    const gap = (end - start - sizeSum) / (sorted.length - 1);
+    let cursor = start;
+    const pos = new Map<string, number>();
+    for (const e of sorted) { pos.set(e.id, Math.round(cursor)); cursor += (axis === "h" ? e.w : e.h) + gap; }
+    updateSlide({ ...slide, elements: slide.elements.map((e) => (pos.has(e.id) ? { ...e, ...(axis === "h" ? { x: pos.get(e.id) as number } : { y: pos.get(e.id) as number }) } : e)) });
   };
   const insertText = () => addElement({ id: "text", type: "text", x: 660, y: 480, w: 600, h: 130, text: "Text", style: { fontSize: 48, fontWeight: 600 }, animation: { preset: "fade", start: 0 } });
   const insertRect = () => addElement({ id: "rect", type: "shape", shape: "rect", x: 760, y: 440, w: 400, h: 200, style: { background: "#6366f1", borderRadius: 16 }, animation: { preset: "fade", start: 0 } });
@@ -85,7 +117,7 @@ export const DeckEditor = () => {
   const withSlides = (slides: SlideJson[], select: number) => {
     update({ ...deck, slides });
     setSel(Math.max(0, Math.min(select, slides.length - 1)));
-    setSelectedId(null);
+    setSelectedIds([]);
   };
   const addSlide = () => {
     const blank: SlideJson = {
@@ -131,6 +163,21 @@ export const DeckEditor = () => {
             <button onClick={insertLine} title="Insert line" style={iconBtn}>—</button>
           </div>
         </div>
+        {selectedIds.length >= 2 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginRight: 4 }}>{selectedIds.length} selected</span>
+            <button onClick={() => alignSelected("left")} title="Align left" style={iconBtn}>⇤</button>
+            <button onClick={() => alignSelected("hcenter")} title="Align center (horizontal)" style={iconBtn}>⇔</button>
+            <button onClick={() => alignSelected("right")} title="Align right" style={iconBtn}>⇥</button>
+            <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.12)" }} />
+            <button onClick={() => alignSelected("top")} title="Align top" style={iconBtn}>⤒</button>
+            <button onClick={() => alignSelected("vmiddle")} title="Align middle (vertical)" style={iconBtn}>⇕</button>
+            <button onClick={() => alignSelected("bottom")} title="Align bottom" style={iconBtn}>⤓</button>
+            <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.12)" }} />
+            <button onClick={() => distributeSelected("h")} title="Distribute horizontally" style={iconBtn}>↔</button>
+            <button onClick={() => distributeSelected("v")} title="Distribute vertically" style={iconBtn}>↕</button>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={undo} title="Undo (Ctrl+Z)" style={iconBtn}>↶</button>
           <button onClick={redo} title="Redo (Ctrl+Shift+Z)" style={iconBtn}>↷</button>
@@ -142,12 +189,12 @@ export const DeckEditor = () => {
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedId(null); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
-        <Canvas slide={slide} theme={theme} config={config} selectedId={selectedId} onSelect={setSelectedId} onChangeSlide={updateSlide} onWheelNav={wheelNav} />
-        <TextPanel slide={slide} selectedId={selectedId} onSelect={setSelectedId} onChange={updateSlide} />
+        <SlideRail deck={deck} selected={index} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
+        <Canvas slide={slide} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onWheelNav={wheelNav} />
+        <TextPanel slide={slide} selectedId={selectedIds.length === 1 ? selectedIds[0] : null} onSelect={(id) => setSelectedIds([id])} onChange={updateSlide} />
       </div>
 
-      <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedId ?? undefined }} />
+      <ChatBar deck={deck} onDeck={update} selection={{ slideId: slide.id, elementId: selectedIds.length === 1 ? selectedIds[0] : undefined }} />
 
       {playing && (
         <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }}>
