@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { DeckJson } from "../schema.js";
-import { chatStream, loadDeck, saveDeck, stopChat, type ChatSelection } from "./api.js";
+import { chatStream, loadDeck, saveDeck, stopChat, type AskQuestion, type ChatSelection } from "./api.js";
 
 type Line = { role: "you" | "claude" | "error"; text: string };
 
@@ -37,6 +37,8 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
   const [busy, setBusy] = useState(false);
   const [scope, setScope] = useState<"deck" | "slide">("slide");
   const [tick, setTick] = useState(0);
+  const [ask, setAsk] = useState<{ id: string; questions: AskQuestion[] } | null>(null); // pending AskUserQuestion
+  const [picks, setPicks] = useState<Record<number, string[]>>({});
   const [queue, setQueue] = useState<string[]>([]); // messages queued while a turn is in flight
   const queueRef = useRef<string[]>([]);
   const setQ = (next: string[] | ((q: string[]) => string[])) =>
@@ -62,20 +64,25 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
     setLog((l) => [...l, { role: "you", text: m }]);
     setBusy(true);
     setStreaming("");
+    setAsk(null); // clear any stale question when a new turn starts
     startedAt.current = Date.now();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let acc = "";
     let usedTool = false;
+    let asked = false;
     try {
       await saveDeck(deck, "commit"); // snapshot to deck.json so Claude reads the latest state
       await chatStream(m, selection, scope, (e) => {
         if (e.type === "text") { acc += e.text; setStreaming(acc); }
+        else if (e.type === "ask") { setAsk({ id: e.id, questions: e.questions }); setPicks({}); asked = true; }
         else if (e.type === "tool") { usedTool = true; acc += `${acc && !acc.endsWith("\n") ? "\n" : ""}  ⚙ ${e.name}…\n`; setStreaming(acc); }
         else if (e.type === "error") { setLog((l) => [...l, { role: "error", text: e.error }]); }
         else if (e.type === "done") { if (!acc.trim() && e.reply) { acc = e.reply; setStreaming(acc); } }
       }, ctrl.signal);
-      if (acc.trim()) setLog((l) => [...l, { role: "claude", text: acc.trim() }]);
+      // When Claude asked a question, the options are shown as buttons — suppress the model's
+      // filler text ("go ahead and pick…") and keep the question pending for the user to answer.
+      if (acc.trim() && !asked) setLog((l) => [...l, { role: "claude", text: acc.trim() }]);
       if (usedTool) onDeck(await loadDeck()); // Claude edits the deck file → reload it into the canvas
     } catch (err) {
       if (ctrl.signal.aborted) setLog((l) => [...l, { role: "claude", text: (acc.trim() ? acc.trim() + "\n" : "") + "  ⛔ stopped" }]);
@@ -84,7 +91,8 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
       abortRef.current = null;
       setStreaming(null);
       setBusy(false);
-      if (!stoppedRef.current && queueRef.current.length) {
+      // Don't auto-advance the queue while a question is pending — let the user answer first.
+      if (!stoppedRef.current && !asked && queueRef.current.length) {
         const [next, ...rest] = queueRef.current;
         setQ(rest);
         submit(next);
@@ -111,6 +119,23 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
     stoppedRef.current = true;
     abortRef.current?.abort();
     stopChat();
+    setAsk(null);
+  };
+
+  // AskUserQuestion answer handling: toggle option picks, then deliver the answer so the turn resumes.
+  const togglePick = (qi: number, label: string, multi: boolean) => {
+    setPicks((p) => {
+      const cur = p[qi] || [];
+      if (multi) return { ...p, [qi]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] };
+      return { ...p, [qi]: [label] };
+    });
+  };
+  const askReady = ask ? ask.questions.every((_, qi) => (picks[qi] || []).length > 0) : false;
+  const submitAnswer = () => {
+    if (!ask || !askReady || busy) return;
+    const content = ask.questions.map((q, qi) => `${q.header || q.question}: ${(picks[qi] || []).join(", ")}`).join(" | ");
+    setPicks({});
+    submit(content); // deliver the answer as a normal follow-up turn (warm process keeps context)
   };
 
   // Up/Down arrows: edit a queued message (most recent first) when the box is empty, else shell-style
@@ -155,6 +180,29 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
           </div>
         )}
       </div>
+
+      {ask && (
+        <div style={{ padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.08)", background: "#0d1018" }}>
+          {ask.questions.map((q, qi) => (
+            <div key={qi} style={{ marginBottom: 8 }}>
+              {q.header && <div style={{ fontSize: 11, color: "#8b8df0", textTransform: "uppercase", letterSpacing: "0.04em" }}>{q.header}</div>}
+              <div style={{ fontSize: 13, color: "#e8e9ee", marginBottom: 6 }}>{q.question}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {q.options.map((o) => {
+                  const sel = (picks[qi] || []).includes(o.label);
+                  return (
+                    <button key={o.label} onClick={() => togglePick(qi, o.label, !!q.multiSelect)} title={o.description}
+                      style={{ ...chip, fontSize: 12, padding: "5px 10px", background: sel ? "#23314a" : "#12151c", color: sel ? "#cfe3ff" : "rgba(255,255,255,0.82)", borderColor: sel ? "#3d86d6" : "rgba(255,255,255,0.12)" }}>
+                      {sel ? "✓ " : ""}{o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <button onClick={submitAnswer} disabled={!askReady || busy} style={{ ...sendBtn, marginTop: 2, opacity: askReady && !busy ? 1 : 0.5 }}>answer ↵</button>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "0 12px 8px", flexWrap: "wrap", fontSize: 11 }}>
         <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid rgba(255,255,255,0.14)" }}>

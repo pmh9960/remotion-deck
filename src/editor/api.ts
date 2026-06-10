@@ -36,9 +36,12 @@ export const gcAssets = async (keep: string[]): Promise<void> => {
 };
 
 export type ChatSelection = { slideId?: string; elementId?: string };
+export type AskOption = { label: string; description?: string };
+export type AskQuestion = { question: string; header?: string; multiSelect?: boolean; options: AskOption[] };
 export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string }
+  | { type: "ask"; id: string; questions: AskQuestion[] }
   | { type: "done"; reply?: string }
   | { type: "error"; error: string };
 
@@ -82,3 +85,4 @@ export const chatStream = async (
 export const stopChat = async (): Promise<void> => {
   await fetch("/__chat/stop", { method: "POST" }).catch(() => {});
 };
+

@@ -16,7 +16,10 @@ const preamble = (deckRel: string) =>
   `animation.preset is one of none|fade|rise|slide-left|slide-up|pop|typewriter with a "start" frame.\n` +
   `To change the deck, EDIT \`${deckRel}\` directly (Read it, then Edit/Write) — the editor live-reloads ` +
   `the file the moment you finish, so the user sees your changes. Keep element and slide ids stable. ` +
-  `When the user just asks a question, answer conversationally without editing. Keep replies concise.`;
+  `When the user just asks a question, answer conversationally without editing. Keep replies concise.\n` +
+  `When you need a decision from the user, call the AskUserQuestion tool — the editor shows your ` +
+  `options as buttons and the user's choice arrives as their NEXT message. After asking, STOP and ` +
+  `wait for that next message; do NOT assume an answer or proceed on your own.`;
 
 /**
  * POST /__chat { message, selection?, scope? } → streams a turn of the user's own Claude Code,
@@ -37,7 +40,7 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
   const emptyMcp = path.join(stateDir, "empty-mcp.json");
   const deckRel = path.relative(opts.cwd, opts.deckFile) || path.basename(opts.deckFile);
 
-  type Ev = { type: "text"; text: string } | { type: "tool"; name: string };
+  type Ev = { type: "text"; text: string } | { type: "tool"; name: string } | { type: "ask"; id: string; questions: unknown };
   type Pending = { onEvent: (e: Ev) => void; resolve: (s: string) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
 
   let child: ChildProcess | null = null;
@@ -72,10 +75,7 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
     if (!fs.existsSync(emptyMcp)) fs.writeFileSync(emptyMcp, '{"mcpServers":{}}');
     const model = process.env.REMOTION_DECK_MODEL || "opus";
     const permission = process.env.REMOTION_DECK_PERMISSION || "acceptEdits";
-    // Disallow interactive tools that would block this non-interactive (-p) session: AskUserQuestion
-    // would emit a tool call the editor UI can't answer, hanging the turn. Claude should just act or
-    // state its assumption instead of asking.
-    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--disallowedTools", "AskUserQuestion", "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
+    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--strict-mcp-config", "--mcp-config", `"${emptyMcp}"`, "--model", model];
     child = spawn("claude", args, { cwd: opts.cwd, shell: true, env: process.env });
     turns = 0;
     child.stdout?.on("data", (d) => {
@@ -85,13 +85,17 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
+        let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string; id?: string; input?: { questions?: unknown } }> } };
         try { ev = JSON.parse(line); } catch { continue; }
         if (!pending) continue;
         if (ev.type === "assistant" && ev.message?.content) {
           for (const block of ev.message.content) {
             if (block.type === "text" && block.text) pending.onEvent({ type: "text", text: block.text });
-            else if (block.type === "tool_use" && block.name) pending.onEvent({ type: "tool", name: block.name });
+            else if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
+              // Interactive question — forward it to the client; the warm process now waits on stdin
+              // for the answer (delivered via POST /__chat/answer → tool_result).
+              pending.onEvent({ type: "ask", id: block.id, questions: block.input?.questions });
+            } else if (block.type === "tool_use" && block.name) pending.onEvent({ type: "tool", name: block.name });
           }
         } else if (ev.type === "result") {
           const p = pending;
