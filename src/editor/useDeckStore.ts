@@ -44,7 +44,7 @@ export const useDeckStore = (): DeckStore => {
     const scan = (d: DeckJson | null) => {
       if (!d) return;
       for (const s of d.slides) for (const el of s.elements) {
-        if (el.type === "image" && el.src.startsWith("assets/")) set.add(el.src);
+        if ((el.type === "image" || el.type === "video") && el.src.startsWith("assets/")) set.add(el.src);
       }
     };
     scan(deckRef.current);

@@ -89,6 +89,30 @@ export const Canvas = ({
     img.src = dataUrl;
   };
 
+  // Same as addImage but for a video (mp4/webm): reads its natural size from a <video>, uploads to
+  // assets/, and inserts a `video` element (plays in the editor; OffthreadVideo on export).
+  const addVideo = (dataUrl: string, cx?: number, cy?: number) => {
+    const v = document.createElement("video");
+    v.onloadedmetadata = async () => {
+      let w = v.videoWidth || 1280;
+      let h = v.videoHeight || 720;
+      const k = Math.min(1, 900 / w, 700 / h);
+      w = Math.round(w * k);
+      h = Math.round(h * k);
+      const x = Math.round((cx ?? config.width / 2) - w / 2);
+      const y = Math.round((cy ?? config.height / 2) - h / 2);
+      let src = dataUrl;
+      try { src = await uploadAsset(dataUrl); } catch { /* keep data-URL fallback */ }
+      const taken = new Set(slide.elements.map((e) => e.id));
+      let id = "video";
+      let n = 2;
+      while (taken.has(id)) id = `video-${n++}`;
+      onChangeSlide({ ...slide, elements: [...slide.elements, { id, type: "video", src, x, y, w, h, animation: { preset: "fade", start: 0 } }] });
+      onSelectIds([id]);
+    };
+    v.src = dataUrl;
+  };
+
   // Paste an image from the clipboard, or paste copied elements (Ctrl/Cmd+V).
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -161,19 +185,23 @@ export const Canvas = ({
       let ok = false;
       try { ok = document.execCommand("copy"); } catch { ok = false; }
       document.body.removeChild(ta);
-      setToast(ok ? "reference copied" : "copy failed — select & ⌘C");
+      if (ok) { flash("reference copied"); return; }
+      // Last resort (clipboard blocked AND execCommand failed): show a prompt pre-filled with the
+      // text so the user can copy it manually with Ctrl/⌘+C.
+      window.prompt("Copy this reference (Ctrl/⌘+C, Enter):", text);
+      flash("reference ready to copy");
     };
+    const flash = (m: string) => { setToast(m); window.setTimeout(() => setToast(null), 1600); };
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(() => setToast("reference copied")).catch(legacy);
+      navigator.clipboard.writeText(text).then(() => flash("reference copied")).catch(legacy);
     } else {
       legacy();
     }
-    window.setTimeout(() => setToast(null), 1600);
   };
   const copyRef = (id: string) => {
     const el = slide.elements.find((e) => e.id === id);
     const kind = el?.type ?? "element";
-    const extra = el && el.type === "image" ? ` src=${el.src}` : "";
+    const extra = el && (el.type === "image" || el.type === "video") ? ` src=${el.src}` : "";
     copyText(`slide #${slideIndex + 1} "${slide.id}" › element "${id}" (${kind})${extra}`);
   };
 
@@ -358,13 +386,14 @@ export const Canvas = ({
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
-        const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
+        const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
         if (!file) return;
         const rect = stageRef.current?.getBoundingClientRect();
         const cx = rect ? (e.clientX - rect.left) / scale : undefined;
         const cy = rect ? (e.clientY - rect.top) / scale : undefined;
+        const isVideo = file.type.startsWith("video/");
         const reader = new FileReader();
-        reader.onload = () => addImage(reader.result as string, cx, cy);
+        reader.onload = () => (isVideo ? addVideo : addImage)(reader.result as string, cx, cy);
         reader.readAsDataURL(file);
       }}
       style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}

@@ -11,6 +11,9 @@ const MIME_EXT: Record<string, string> = {
   "image/webp": "webp",
   "image/svg+xml": "svg",
   "image/avif": "avif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
 };
 const EXT_MIME: Record<string, string> = Object.fromEntries(
   Object.entries(MIME_EXT).map(([m, e]) => [e, m]),

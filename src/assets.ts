@@ -10,6 +10,9 @@ const EXT_MIME: Record<string, string> = {
   webp: "image/webp",
   svg: "image/svg+xml",
   avif: "image/avif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
 };
 
 /**
@@ -31,7 +34,9 @@ export const inlineAssets = (deck: DeckJson, cwd: string): DeckJson => {
     slides: deck.slides.map((s) => ({
       ...s,
       elements: s.elements.map((el) =>
-        el.type === "image" && el.src.startsWith("assets/") ? { ...el, src: toDataUrl(el.src) } : el,
+        (el.type === "image" || el.type === "video") && el.src.startsWith("assets/")
+          ? { ...el, src: toDataUrl(el.src) }
+          : el,
       ),
     })),
   };
@@ -42,7 +47,7 @@ export const referencedAssets = (deck: DeckJson): string[] => {
   const refs = new Set<string>();
   for (const s of deck.slides) {
     for (const el of s.elements) {
-      if (el.type === "image" && el.src.startsWith("assets/")) refs.add(el.src);
+      if ((el.type === "image" || el.type === "video") && el.src.startsWith("assets/")) refs.add(el.src);
     }
   }
   return [...refs];

@@ -55,12 +55,14 @@ type ElementBase = {
 
 export type TextElement = ElementBase & { type: "text"; text: string };
 export type ImageElement = ElementBase & { type: "image"; src: string };
+/** Video element. src is a data-URL / http(s) URL / project-relative assets/<file> (mp4/webm). */
+export type VideoElement = ElementBase & { type: "video"; src: string };
 export type ShapeElement = ElementBase & {
   type: "shape";
   shape?: "rect" | "pill" | "line";
 };
 
-export type SlideElement = TextElement | ImageElement | ShapeElement;
+export type SlideElement = TextElement | ImageElement | VideoElement | ShapeElement;
 
 export type Background =
   | string

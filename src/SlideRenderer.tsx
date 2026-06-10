@@ -1,5 +1,9 @@
 import type { CSSProperties } from "react";
-import { useCurrentFrame, useVideoConfig } from "remotion";
+import { OffthreadVideo, useCurrentFrame, useVideoConfig } from "remotion";
+
+/** "html" → plain <video> (works anywhere, incl. the editor canvas); "offthread" → Remotion's
+ *  OffthreadVideo (frame-accurate, captured by PDF/HTML export — only valid inside Remotion). */
+type VideoMode = "html" | "offthread";
 import { computeElementStyle } from "./animations.js";
 import {
   resolveTheme,
@@ -24,11 +28,13 @@ const ElementView = ({
   frame,
   fps,
   theme,
+  videoMode,
 }: {
   el: SlideElement;
   frame: number;
   fps: number;
   theme: ResolvedTheme;
+  videoMode: VideoMode;
 }) => {
   const a = computeElementStyle(el, frame, fps);
   const box: CSSProperties = {
@@ -47,6 +53,15 @@ const ElementView = ({
         src={el.src}
         style={{ ...box, objectFit: el.style?.objectFit ?? "contain", borderRadius: el.style?.borderRadius }}
       />
+    );
+  }
+
+  if (el.type === "video") {
+    const vstyle: CSSProperties = { ...box, objectFit: el.style?.objectFit ?? "contain", borderRadius: el.style?.borderRadius };
+    return videoMode === "offthread" ? (
+      <OffthreadVideo src={el.src} muted style={vstyle} />
+    ) : (
+      <video src={el.src} style={vstyle} autoPlay muted loop playsInline />
     );
   }
 
@@ -112,17 +127,19 @@ export const renderSlide = (
   frame: number,
   fps: number,
   theme: ResolvedTheme,
+  videoMode: VideoMode = "html",
 ) => (
   <div style={{ position: "absolute", inset: 0, overflow: "hidden", ...backgroundStyle(slide.background, theme) }}>
     {slide.elements.map((el) => (
-      <ElementView key={el.id} el={el} frame={frame} fps={fps} theme={theme} />
+      <ElementView key={el.id} el={el} frame={frame} fps={fps} theme={theme} videoMode={videoMode} />
     ))}
   </div>
 );
 
-/** Remotion component: renders a JSON slide, frame-driven. */
+/** Remotion component: renders a JSON slide, frame-driven. Uses OffthreadVideo for video so it's
+ *  frame-accurate and captured by PDF/HTML export. */
 export const SlideRenderer = ({ slide, theme }: { slide: SlideJson; theme?: ThemeJson }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  return renderSlide(slide, frame, fps, resolveTheme(theme));
+  return renderSlide(slide, frame, fps, resolveTheme(theme), "offthread");
 };

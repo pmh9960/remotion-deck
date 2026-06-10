@@ -68,8 +68,10 @@ like `libnss3`/`libatk`). `html` is the dependency-free way to produce a shareab
              "underline": false, "uppercase": false, "gradientText": false },
   "animation": { "preset": "rise", "start": 0 } }
 ```
-- `type: "text"` → `text`. `type: "image"` → `src`. `type: "shape"` → `shape: "rect" | "pill" | "line"`
-  (shapes fill with the accent gradient unless `style.background` is set).
+- `type: "text"` → `text`. `type: "image"` → `src`. `type: "video"` → `src` (mp4/webm; plays in the
+  editor and is frame-accurate via Remotion's OffthreadVideo on present/PDF/HTML export).
+  `type: "shape"` → `shape: "rect" | "pill" | "line"` (shapes fill with the accent gradient unless
+  `style.background` is set).
 - Image `src` may be a data-URL, an `http(s)` URL, or a project-relative `assets/<file>` path. The
   editor stores pasted/dropped images under `assets/` and references them by path (keeps deck.json
   small); `pdf`/`html` exports re-inline them so the artifact stays self-contained. When you author
