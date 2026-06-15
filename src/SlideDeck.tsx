@@ -54,17 +54,36 @@ export const SlideDeck = ({
   const [index, setIndex] = useState(() =>
     Math.min(Math.max(0, initialIndex), Math.max(0, slides.length - 1)),
   );
+  // Within-slide click-to-reveal cursor. 0 = base reveal; up to slides[index].steps.
+  const [subStep, setSubStep] = useState(0);
   const playerRef = useRef<PlayerRef>(null);
   const wheelLock = useRef(0);
 
+  const stepsOf = useCallback(
+    (i: number) => Math.max(0, slides[i]?.steps ?? 0),
+    [slides],
+  );
+
+  // Forward/back navigation that first walks a slide's build steps, then crosses slides. Going
+  // backward into a previous slide lands on it fully built (subStep = its max step).
   const go = useCallback(
     (delta: number) => {
-      setIndex((prev) => {
-        const next = Math.min(slides.length - 1, Math.max(0, prev + delta));
-        return next;
-      });
+      if (delta > 0) {
+        if (subStep < stepsOf(index)) setSubStep(subStep + 1);
+        else if (index < slides.length - 1) {
+          setIndex(index + 1);
+          setSubStep(0);
+        }
+      } else if (delta < 0) {
+        if (subStep > 0) setSubStep(subStep - 1);
+        else if (index > 0) {
+          const prev = index - 1;
+          setIndex(prev);
+          setSubStep(stepsOf(prev));
+        }
+      }
     },
-    [slides.length],
+    [index, subStep, slides.length, stepsOf],
   );
 
   // Throttled wheel navigation: one slide per gesture, not per wheel tick.
@@ -98,7 +117,8 @@ export const SlideDeck = ({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [index, slides, fps]);
+    // subStep is a dep so revealing a build step replays the intro → the new step animates in.
+  }, [index, subStep, slides, fps]);
 
   // Keyboard navigation.
   useEffect(() => {
@@ -111,13 +131,16 @@ export const SlideDeck = ({
         go(-1);
       } else if (e.key === "Home") {
         setIndex(0);
+        setSubStep(0);
       } else if (e.key === "End") {
-        setIndex(slides.length - 1);
+        const last = slides.length - 1;
+        setIndex(last);
+        setSubStep(stepsOf(last));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, slides.length]);
+  }, [go, slides.length, stepsOf]);
 
   const slide = slides[index];
   if (!slide) return null;
@@ -134,9 +157,23 @@ export const SlideDeck = ({
         justifyContent: "center",
         cursor: advanceOnClick ? "pointer" : "default",
         overflow: "hidden",
+        // When click-to-advance is on we suppress native selection (a click-drag would otherwise
+        // paint the slide text). With it off, text is selectable/draggable and links are clickable.
+        userSelect: advanceOnClick ? "none" : "text",
+        WebkitUserSelect: advanceOnClick ? "none" : "text",
         ...style,
       }}
-      onClick={advanceOnClick ? () => go(1) : undefined}
+      onClick={
+        advanceOnClick
+          ? (e) => {
+              // Skip advancing when the click landed on an interactive element (e.g. a video that
+              // toggles play/pause). The Player renders the composition in its own React tree, so a
+              // synthetic stopPropagation there never reaches here — inspect the real DOM target.
+              if ((e.target as HTMLElement)?.closest?.("[data-no-advance]")) return;
+              go(1);
+            }
+          : undefined
+      }
       onWheel={onWheel}
     >
       {showProgress && (
@@ -157,6 +194,7 @@ export const SlideDeck = ({
         key={slide.id}
         ref={playerRef}
         component={slide.component}
+        inputProps={{ revealStep: subStep }}
         durationInFrames={slide.durationInFrames}
         fps={fps}
         compositionWidth={width}

@@ -51,9 +51,18 @@ type ElementBase = {
   h: number;
   style?: ElementStyle;
   animation?: ElementAnimation;
+  /**
+   * Click-to-reveal step (a "build"/fragment). Elements with the same step appear together.
+   * Omitted / 0 → revealed with the slide on entry (the common case — most slides leave this
+   * unset so everything shows at once). 1, 2, … → revealed on the 1st, 2nd, … forward click,
+   * each animating in, BEFORE the deck advances to the next slide. Use sparingly (a couple of
+   * slides with 2–3 steps), not on every slide. Ignored in the editor canvas and PDF export
+   * (both show every step fully built).
+   */
+  step?: number;
 };
 
-export type TextElement = ElementBase & { type: "text"; text: string };
+export type TextElement = ElementBase & { type: "text"; text: string; link?: string };
 export type ImageElement = ElementBase & { type: "image"; src: string };
 /** Video element. src is a data-URL / http(s) URL / project-relative assets/<file> (mp4/webm). */
 export type VideoElement = ElementBase & { type: "video"; src: string };

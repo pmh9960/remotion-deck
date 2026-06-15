@@ -46,26 +46,17 @@ const cmdPdf = async () => {
   const deck = loadDeck(deckPath);
 
   // Write a temporary Remotion entry INSIDE the project so that "remotion-deck"
-  // resolves from the project's node_modules. The deck JSON is embedded as a
-  // literal to avoid any import-path resolution for the data file.
-  const { inlineAssets } = await import("./assets.js");
-  const embedded = inlineAssets(deck, cwd);
-  const tmpDir = path.join(cwd, ".remotion-deck");
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const entry = path.join(tmpDir, "entry.tsx");
-  fs.writeFileSync(
-    entry,
-    `import { registerDeck, deckFromJson } from "remotion-deck";\n` +
-      `const deck = ${JSON.stringify(embedded)};\n` +
-      `const { slides, config } = deckFromJson(deck);\n` +
-      `registerDeck(slides, config);\n`,
-  );
+  // resolves from the project's node_modules. The deck JSON is embedded as a literal
+  // (images inlined as data-URLs, videos copied into publicDir + staticFile'd — see writePdfEntry).
+  const { writePdfEntry } = await import("./pdfEntry.js");
+  const { entryPoint, publicDir, tmpDir } = writePdfEntry(deck, cwd);
 
   try {
     const { renderDeckToPdf } = await import("./node.js");
     const result = await renderDeckToPdf({
-      entryPoint: entry,
+      entryPoint,
       output: out,
+      publicDir,
       onProgress: ({ id, index, total }: { id: string; index: number; total: number }) =>
         console.log(`  ${index + 1}/${total} ${id}`),
     });

@@ -65,6 +65,26 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
   let chain: Promise<unknown> = Promise.resolve();
   let turns = 0;
 
+  // No turn timeout by default: Claude can sit silently THINKING for a long time with no stdout, so
+  // even an idle watchdog would misfire. A turn ends only when the process finishes (result), dies
+  // (exit/error → failPending), or the user hits stop. Set REMOTION_DECK_TIMEOUT_MS>0 to opt into an
+  // idle watchdog (fails the turn after that many ms of NO output; every streamed event re-arms it).
+  const IDLE_MS = (() => {
+    const v = process.env.REMOTION_DECK_TIMEOUT_MS;
+    if (v === undefined) return 0; // default: disabled
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0; // 0 / invalid → no timeout
+  })();
+  const armIdle = (p: Pending) => {
+    clearTimeout(p.timer);
+    if (IDLE_MS > 0) {
+      p.timer = setTimeout(
+        () => failPending(new Error(`claude produced no output for ${Math.round(IDLE_MS / 1000)}s — assuming it hung. Press stop and retry, or set REMOTION_DECK_TIMEOUT_MS.`)),
+        IDLE_MS,
+      );
+    }
+  };
+
   const failPending = (e: Error) => {
     if (pending) { const p = pending; pending = null; clearTimeout(p.timer); p.reject(e); }
   };
@@ -104,6 +124,7 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
         let ev: { type?: string; result?: string; message?: { content?: Array<{ type?: string; text?: string; thinking?: string; name?: string; id?: string; input?: Record<string, unknown> }> } };
         try { ev = JSON.parse(line); } catch { continue; }
         if (!pending) continue;
+        armIdle(pending); // the process is alive and talking → reset the idle watchdog
         if (ev.type === "assistant" && ev.message?.content) {
           for (const block of ev.message.content) {
             if (block.type === "text" && block.text) pending.onEvent({ type: "text", text: block.text });
@@ -131,8 +152,9 @@ export const chatMiddleware = (opts: { cwd: string; deckFile: string }): Plugin 
     new Promise<string>((resolve, reject) => {
       ensureProc();
       if (!child || !child.stdin) { reject(new Error("could not start claude")); return; }
-      const timer = setTimeout(() => failPending(new Error("claude timed out")), 300000);
+      const timer = setTimeout(() => {}, 0); // placeholder; armIdle re-arms with the real idle window
       pending = { onEvent, resolve, reject, timer };
+      armIdle(pending);
       turns += 1;
       child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n");
     });

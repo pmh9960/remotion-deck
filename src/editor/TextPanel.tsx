@@ -117,6 +117,10 @@ export const TextPanel = ({
                 </label>
               </div>
               <div style={{ marginBottom: 12 }}>
+                <div style={labelStyle}>Link (opens in slideshow)</div>
+                <input value={sel.link ?? ""} placeholder="https://…" onChange={(e) => set(sel.id, { link: e.target.value || undefined })} onBlur={onCommit} style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
                 <div style={labelStyle}>Align</div>
                 <div style={{ display: "flex", gap: 6 }}>
                   {(["left", "center", "right"] as const).map((a) => (

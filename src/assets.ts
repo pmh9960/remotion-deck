@@ -19,8 +19,21 @@ const EXT_MIME: Record<string, string> = {
  * Returns a copy of the deck with every `assets/<file>` image reference replaced by an inlined
  * data-URL (read from <cwd>/assets). Used by the PDF and self-contained HTML exports so they keep
  * working with no server. data-URL and http(s) srcs are left untouched.
+ *
+ * `opts.video`:
+ *  - "inline" (default) — videos are inlined as data-URLs too (HTML export: the browser plays a
+ *    `data:` video directly).
+ *  - "skip" — videos are left as `assets/<file>`. The PDF export uses this: Remotion's
+ *    OffthreadVideo fetches its src through a local proxy as a *query parameter*, and a multi-MB
+ *    base64 data-URL blows past the URL/header size limit (HTTP 431). The PDF path instead copies
+ *    the video files into the render bundle's publicDir and references them via `staticFile()`.
  */
-export const inlineAssets = (deck: DeckJson, cwd: string): DeckJson => {
+export const inlineAssets = (
+  deck: DeckJson,
+  cwd: string,
+  opts: { video?: "inline" | "skip" } = {},
+): DeckJson => {
+  const inlineVideo = (opts.video ?? "inline") === "inline";
   const toDataUrl = (ref: string): string => {
     const file = path.basename(ref);
     const full = path.join(cwd, "assets", file);
@@ -33,11 +46,11 @@ export const inlineAssets = (deck: DeckJson, cwd: string): DeckJson => {
     ...deck,
     slides: deck.slides.map((s) => ({
       ...s,
-      elements: s.elements.map((el) =>
-        (el.type === "image" || el.type === "video") && el.src.startsWith("assets/")
-          ? { ...el, src: toDataUrl(el.src) }
-          : el,
-      ),
+      elements: s.elements.map((el) => {
+        if (el.type === "image" && el.src.startsWith("assets/")) return { ...el, src: toDataUrl(el.src) };
+        if (el.type === "video" && el.src.startsWith("assets/") && inlineVideo) return { ...el, src: toDataUrl(el.src) };
+        return el;
+      }),
     })),
   };
 };

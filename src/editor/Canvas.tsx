@@ -60,6 +60,8 @@ export const Canvas = ({
   const [editing, setEditing] = useState<string | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [menu, setMenu] = useState<Menu | null>(null);
+  // Rubber-band (marquee) selection rectangle, in composition px, while dragging on empty canvas.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const clipboard = useRef<SlideElement[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -168,6 +170,26 @@ export const Canvas = ({
     onSelectIds([]);
   };
 
+  // Download an image/video element's asset to the local machine. The dev server may be remote
+  // (e.g. accessed over Tailscale), so we trigger a browser download rather than touching the
+  // server FS. `assets/<file>` is same-origin (served by the dev server) so the `download`
+  // attribute forces a save; data-URL srcs download directly.
+  const downloadEl = (id: string) => {
+    const el = slide.elements.find((e) => e.id === id);
+    if (!el || (el.type !== "image" && el.type !== "video")) return;
+    const name = el.src.startsWith("data:")
+      ? `${el.id}.${(el.src.slice(5, el.src.indexOf(";")).split("/")[1] || "bin")}`
+      : el.src.split("/").pop() || el.id;
+    const a = document.createElement("a");
+    a.href = el.src;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setToast(`downloading ${name}`);
+    window.setTimeout(() => setToast(null), 1600);
+  };
+
   // Copy a human + Claude-friendly reference to an element (slide number + ids + type, and the
   // image src if any) so it can be pasted into the chat to point Claude at exactly this box.
   // navigator.clipboard only exists in secure contexts (https / localhost); over plain http to a
@@ -192,8 +214,18 @@ export const Canvas = ({
       flash("reference ready to copy");
     };
     const flash = (m: string) => { setToast(m); window.setTimeout(() => setToast(null), 1600); };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(() => flash("reference copied")).catch(legacy);
+    // navigator.clipboard is only reliable in a secure context (https / localhost). Over plain http
+    // to a remote IP (e.g. a Tailscale 100.x address), some browsers still expose navigator.clipboard
+    // but writeText() throws *synchronously* — which .catch() never sees — so the whole copy silently
+    // no-ops (no toast, no prompt). Gate on isSecureContext, and wrap the call in try/catch so any
+    // synchronous throw also falls through to the legacy execCommand path (gesture-gated, not
+    // secure-context-gated, so it works over plain http).
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        navigator.clipboard.writeText(text).then(() => flash("reference copied")).catch(legacy);
+      } catch {
+        legacy();
+      }
     } else {
       legacy();
     }
@@ -325,6 +357,41 @@ export const Canvas = ({
     window.addEventListener("pointerup", up);
   };
 
+  // PowerPoint-style marquee: drag on empty canvas to rubber-band-select every element FULLY
+  // ENCLOSED by the box. Shift adds to the current selection. A click with no drag clears (or keeps,
+  // with Shift).
+  // Element clicks never reach here — begin() stops propagation — so this only fires on empty space.
+  const startMarquee = (e: React.PointerEvent) => {
+    if (editing) return;
+    setMenu(null);
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) { onSelectIds([]); return; }
+    const sx = (e.clientX - rect.left) / scale;
+    const sy = (e.clientY - rect.top) / scale;
+    const base = e.shiftKey ? selectedIds : [];
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const cx = (ev.clientX - rect.left) / scale;
+      const cy = (ev.clientY - rect.top) / scale;
+      if (Math.abs(cx - sx) + Math.abs(cy - sy) > 3) moved = true;
+      const minX = Math.min(sx, cx), minY = Math.min(sy, cy);
+      const maxX = Math.max(sx, cx), maxY = Math.max(sy, cy);
+      setMarquee({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+      const hit = slide.elements
+        .filter((el) => el.x >= minX && el.x + el.w <= maxX && el.y >= minY && el.y + el.h <= maxY)
+        .map((el) => el.id);
+      onSelectIds(base.length ? Array.from(new Set([...base, ...hit])) : hit);
+    };
+    const up = () => {
+      if (!moved) onSelectIds(base); // plain click on empty space → clear selection
+      setMarquee(null);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   // Bounding box of the current multi-selection (≥2), for the group-resize handle.
   const selEls = slide.elements.filter((e) => selectedIds.includes(e.id));
   const gbb =
@@ -381,7 +448,7 @@ export const Canvas = ({
   return (
     <div
       ref={ref}
-      onPointerDown={() => { onSelectIds([]); setMenu(null); }}
+      onPointerDown={startMarquee}
       onWheel={(e) => { if (Math.abs(e.deltaY) > 8) onWheelNav(e.deltaY > 0 ? 1 : -1); }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -396,7 +463,7 @@ export const Canvas = ({
         reader.onload = () => (isVideo ? addVideo : addImage)(reader.result as string, cx, cy);
         reader.readAsDataURL(file);
       }}
-      style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b" }}
+      style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#06070b", userSelect: "none", WebkitUserSelect: "none" }}
     >
       <div ref={stageRef} style={{ width: config.width, height: config.height, transform: `scale(${scale})`, transformOrigin: "center", position: "relative", flex: "0 0 auto", boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }}>
         {/* While inline-editing a text element, omit it from the background render so the
@@ -414,11 +481,14 @@ export const Canvas = ({
                 key={el.id}
                 autoFocus
                 value={el.text}
-                onChange={(e) => patchMany([{ id: el.id, text: e.target.value }])}
+                // Auto-grow to fit the content so the whole text is visible while editing — no clipping,
+                // no scrollbar. Runs on mount (ref) and on every keystroke (onChange).
+                ref={(node) => { if (node) { node.style.height = "auto"; node.style.height = `${node.scrollHeight}px`; } }}
+                onChange={(e) => { e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; patchMany([{ id: el.id, text: e.target.value }]); }}
                 onBlur={() => { setEditing(null); onCommit(); }}
                 onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
                 onPointerDown={(e) => e.stopPropagation()}
-                style={{ ...box, resize: "none", border: "2px solid #6366f1", background: "rgba(6,7,11,0.55)", color: s.color ?? theme.text, fontFamily: s.fontFamily ?? theme.font, fontSize: s.fontSize ?? 40, fontWeight: s.fontWeight ?? 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: s.underline ? "underline" : "none", letterSpacing: s.letterSpacing, lineHeight: s.lineHeight ?? 1.2, textAlign: s.align ?? "left", padding: 0, outline: "none" }}
+                style={{ ...box, height: "auto", minHeight: el.h, boxSizing: "border-box", overflow: "hidden", resize: "none", border: "2px solid #4d9bff", background: "transparent", color: s.color ?? theme.text, fontFamily: s.fontFamily ?? theme.font, fontSize: s.fontSize ?? 40, fontWeight: s.fontWeight ?? 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: s.underline ? "underline" : "none", letterSpacing: s.letterSpacing, lineHeight: s.lineHeight ?? 1.2, textAlign: s.align ?? "left", padding: 0, outline: "none" }}
               />
             );
           }
@@ -454,14 +524,27 @@ export const Canvas = ({
         {guides.y.map((gy, i) => (
           <div key={`gy${i}`} style={{ position: "absolute", top: gy, left: 0, height: 1, width: config.width, background: "#ec4899", pointerEvents: "none", zIndex: 50 }} />
         ))}
+
+        {marquee && (
+          <div style={{ position: "absolute", left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h, background: "rgba(77,155,255,0.15)", border: "1px solid #4d9bff", pointerEvents: "none", zIndex: 60 }} />
+        )}
       </div>
 
       {menu && (
         <>
           <div onPointerDown={() => setMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 200 }} />
-          <div style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 201, background: "#15171f", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: 4, minWidth: 170, boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
+          {/* stopPropagation: the Canvas root has onPointerDown={setMenu(null)}, so without this the
+              item's pointerdown bubbles up and unmounts the menu *before* its onClick can fire —
+              making every menu item silently un-clickable. Keep the pointerdown inside the panel. */}
+          <div onPointerDown={(e) => e.stopPropagation()} style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 201, background: "#15171f", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: 4, minWidth: 170, boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
             {([
               ["Copy reference id", () => copyRef(menu.id)],
+              ...((): [string, () => void][] => {
+                const el = slide.elements.find((e) => e.id === menu.id);
+                return el && (el.type === "image" || el.type === "video")
+                  ? [["Download", () => downloadEl(menu.id)]]
+                  : [];
+              })(),
               ["Bring to front", () => arrange(menu.id, "front")],
               ["Bring forward", () => arrange(menu.id, "forward")],
               ["Send backward", () => arrange(menu.id, "backward")],

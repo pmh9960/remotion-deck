@@ -11,7 +11,7 @@ const Present = () => {
     loadDeck().then(setDeck);
   }, []);
   if (!deck) return null;
-  return <SlideDeck slides={deckFromJson(deck).slides} config={resolveDeckConfig(deck.config)} />;
+  return <SlideDeck slides={deckFromJson(deck, "present").slides} config={resolveDeckConfig(deck.config)} />;
 };
 
 /** Entry mounted by the CLI present server (`remotion-deck present`). */

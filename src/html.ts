@@ -13,7 +13,7 @@ export const buildHtml = async (deck: DeckJson, resolveDir: string): Promise<str
   const entry = `import { createRoot } from "react-dom/client";
 import { SlideDeck, deckFromJson } from "remotion-deck";
 const deck = ${JSON.stringify(embedded)};
-const { slides, config } = deckFromJson(deck);
+const { slides, config } = deckFromJson(deck, "present");
 createRoot(document.getElementById("root")).render(<SlideDeck slides={slides} config={config} />);
 `;
   const result = await build({

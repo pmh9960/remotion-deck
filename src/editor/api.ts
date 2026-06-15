@@ -80,6 +80,9 @@ export const chatStream = async (
       if (line) { try { onEvent(JSON.parse(line) as ChatEvent); } catch { /* skip partial */ } }
     }
   }
+  // Flush a trailing line that wasn't newline-terminated, so a final event (e.g. done) is never lost.
+  const tail = buf.trim();
+  if (tail) { try { onEvent(JSON.parse(tail) as ChatEvent); } catch { /* ignore */ } }
 };
 
 /** Interrupt the in-flight chat turn on the server (kills the warm process; it respawns next turn). */

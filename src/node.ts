@@ -34,6 +34,13 @@ export type RenderDeckToPdfOptions = {
   only?: string[];
   /** Progress callback, fired once per rendered slide. */
   onProgress?: (event: { id: string; index: number; total: number }) => void;
+  /**
+   * Directory served as Remotion's `public/` for this render. Files here are reachable via
+   * `staticFile("<name>")` from the entry/components. The PDF export uses this for videos so
+   * OffthreadVideo fetches a short URL instead of a giant base64 data-URL (which 431s — see
+   * inlineAssets `video: "skip"`).
+   */
+  publicDir?: string;
 };
 
 export type RenderDeckToPdfResult = {
@@ -59,11 +66,11 @@ const pickFrame = (selector: FrameSelector, comp: CompositionInfo): number => {
 export async function renderDeckToPdf(
   options: RenderDeckToPdfOptions,
 ): Promise<RenderDeckToPdfResult> {
-  const { entryPoint, output, frame = "last", only, onProgress } = options;
+  const { entryPoint, output, frame = "last", only, onProgress, publicDir } = options;
 
   // registerDeck() calls Remotion's registerRoot() for the user, so the entry file
   // won't contain the literal "registerRoot" that the bundler statically looks for.
-  const serveUrl = await bundle({ entryPoint, ignoreRegisterRootWarning: true });
+  const serveUrl = await bundle({ entryPoint, ignoreRegisterRootWarning: true, publicDir });
   const all = await getCompositions(serveUrl);
 
   const compositions = only

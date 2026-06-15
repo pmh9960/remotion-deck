@@ -39,12 +39,14 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
   const [tick, setTick] = useState(0);
   const [ask, setAsk] = useState<{ id: string; questions: AskQuestion[] } | null>(null); // pending AskUserQuestion
   const [picks, setPicks] = useState<Record<number, string[]>>({});
+  const [custom, setCustom] = useState<Record<number, string>>({}); // free-text answer per question
   const [queue, setQueue] = useState<string[]>([]); // messages queued while a turn is in flight
   const queueRef = useRef<string[]>([]);
   const setQ = (next: string[] | ((q: string[]) => string[])) =>
     setQueue((q) => { const v = typeof next === "function" ? next(q) : next; queueRef.current = v; return v; });
   const [history, setHistory] = useState<string[]>(() => loadLog().filter((l) => l.role === "you").map((l) => l.text));
   const histIdx = useRef<number | null>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const startedAt = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
@@ -58,6 +60,13 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [log, streaming]);
   useEffect(() => { saveLog(log); }, [log]); // persist transcript across refreshes
+  // auto-grow the composer up to a few lines (Shift+Enter inserts newlines)
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+  }, [msg]);
 
   // Run one turn (abortable). On natural completion, auto-advance the queue; a stop skips that.
   const submit = async (m: string) => {
@@ -71,21 +80,33 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
     let acc = "";
     let usedTool = false;
     let asked = false;
+    let answered = false; // whether any assistant answer line was committed this turn
+    let finalReply = ""; // the server's final result text — fallback so the answer is never lost
     try {
       await saveDeck(deck, "commit"); // snapshot to deck.json so Claude reads the latest state
       // Flush any buffered reply text as a claude line; tool/thinking steps interleave as their own
       // persistent trace lines (so the full Read/Edit/think trace stays in the transcript).
-      const flush = () => { if (acc.trim()) setLog((l) => [...l, { role: "claude", text: acc.trim() }]); acc = ""; setStreaming(""); };
+      // Capture acc into a local BEFORE resetting it: setLog's updater runs later (async), so reading
+      // acc lazily inside it would see the already-cleared "" and silently drop the answer.
+      const flush = () => {
+        const t = acc.trim();
+        acc = "";
+        setStreaming("");
+        if (t) { setLog((l) => [...l, { role: "claude", text: t }]); answered = true; }
+      };
       await chatStream(m, selection, scope, (e) => {
         if (e.type === "text") { acc += e.text; setStreaming(acc); }
         else if (e.type === "thinking") { flush(); setLog((l) => [...l, { role: "think", text: e.text }]); }
         else if (e.type === "tool") { usedTool = true; flush(); setLog((l) => [...l, { role: "trace", text: `${e.name}${e.detail ? "  " + e.detail : ""}` }]); }
-        else if (e.type === "ask") { flush(); setAsk({ id: e.id, questions: e.questions }); setPicks({}); asked = true; }
+        else if (e.type === "ask") { flush(); setAsk({ id: e.id, questions: e.questions }); setPicks({}); setCustom({}); asked = true; }
         else if (e.type === "error") { flush(); setLog((l) => [...l, { role: "error", text: e.error }]); }
-        else if (e.type === "done") { if (!acc.trim() && e.reply) { acc = e.reply; setStreaming(acc); } }
+        else if (e.type === "done") { finalReply = e.reply ?? ""; if (!acc.trim() && e.reply) { acc = e.reply; setStreaming(acc); } }
       }, ctrl.signal);
       // When Claude asked a question, suppress the filler reply (options are shown as buttons).
       if (!asked) flush();
+      // Safety net: never let a turn finish silently. If nothing was committed but the server sent a
+      // final reply, show it.
+      if (!asked && !answered && finalReply.trim()) setLog((l) => [...l, { role: "claude", text: finalReply.trim() }]);
       if (usedTool) onDeck(await loadDeck()); // Claude edits the deck file → reload it into the canvas
     } catch (err) {
       if (ctrl.signal.aborted) setLog((l) => [...l, { role: "claude", text: (acc.trim() ? acc.trim() + "\n" : "") + "  ⛔ stopped" }]);
@@ -133,11 +154,20 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
       return { ...p, [qi]: [label] };
     });
   };
-  const askReady = ask ? ask.questions.every((_, qi) => (picks[qi] || []).length > 0) : false;
+  // a question is answered if it has ≥1 picked option OR a non-empty free-text answer.
+  const askReady = ask
+    ? ask.questions.every((_, qi) => (picks[qi] || []).length > 0 || (custom[qi] || "").trim().length > 0)
+    : false;
   const submitAnswer = () => {
     if (!ask || !askReady || busy) return;
-    const content = ask.questions.map((q, qi) => `${q.header || q.question}: ${(picks[qi] || []).join(", ")}`).join(" | ");
+    const content = ask.questions
+      .map((q, qi) => {
+        const parts = [...(picks[qi] || []), (custom[qi] || "").trim()].filter(Boolean);
+        return `${q.header || q.question}: ${parts.join(", ")}`;
+      })
+      .join(" | ");
     setPicks({});
+    setCustom({});
     submit(content); // deliver the answer as a normal follow-up turn (warm process keeps context)
   };
 
@@ -167,7 +197,7 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
     <div style={{ flex: "0 0 auto", height, display: "flex", flexDirection: "column", borderTop: "1px solid rgba(255,255,255,0.1)", background: "#0a0c10", fontFamily: MONO }}>
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 14px", fontSize: 12.5, lineHeight: 1.55 }}>
         {log.length === 0 && !busy && (
-          <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ to send.</div>
+          <div style={{ color: "rgba(255,255,255,0.32)" }}>claude code · deck session — ask, discuss, or tell it what to change. ↵ send · ⇧↵ newline.</div>
         )}
         {log.slice(-LOG_CAP).map((l, i) => {
           const color = l.role === "error" ? "#ef6b7d" : l.role === "you" ? "#e8e9ee" : l.role === "trace" ? "#79a8c9" : l.role === "think" ? "rgba(255,255,255,0.4)" : "#b9c2cc";
@@ -208,6 +238,18 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
                   );
                 })}
               </div>
+              <input
+                value={custom[qi] || ""}
+                placeholder="or type your own answer…"
+                onChange={(e) => setCustom((c) => ({ ...c, [qi]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitAnswer(); } }}
+                style={{
+                  marginTop: 6, width: "100%", boxSizing: "border-box", background: "#12151c",
+                  border: `1px solid ${(custom[qi] || "").trim() ? "#3d86d6" : "rgba(255,255,255,0.12)"}`,
+                  borderRadius: 6, color: "#e8e9ee", fontSize: 12, padding: "5px 8px",
+                  fontFamily: MONO, outline: "none",
+                }}
+              />
             </div>
           ))}
           <button onClick={submitAnswer} disabled={!askReady || busy} style={{ ...sendBtn, marginTop: 2, opacity: askReady && !busy ? 1 : 0.5 }}>answer ↵</button>
@@ -246,16 +288,20 @@ export const ChatBar = ({ deck, onDeck, selection, height }: { deck: DeckJson; o
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 12px" }}>
-        <span style={{ color: "#5dd08a", fontFamily: MONO, fontSize: 14 }}>❯</span>
-        <input
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, padding: "0 14px 12px" }}>
+        <span style={{ color: "#5dd08a", fontFamily: MONO, fontSize: 14, paddingBottom: 6 }}>❯</span>
+        <textarea
+          ref={taRef}
           value={msg}
-          placeholder={busy ? "queue a message…  (Esc / stop to interrupt)" : "message claude   (↑ history)"}
+          rows={1}
+          placeholder={busy ? "queue a message…  (Esc / stop to interrupt)" : "message claude   (↑ history · ⇧↵ newline)"}
           onChange={(e) => { setMsg(e.target.value); histIdx.current = null; }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); onEnter(); }
-            else if (e.key === "ArrowUp") { e.preventDefault(); onArrow(-1); }
-            else if (e.key === "ArrowDown") { e.preventDefault(); onArrow(1); }
+            // Enter sends; Shift+Enter falls through to insert a newline.
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onEnter(); }
+            // history nav only on a single-line buffer, so arrows still move the caret in multi-line.
+            else if (e.key === "ArrowUp" && !msg.includes("\n")) { e.preventDefault(); onArrow(-1); }
+            else if (e.key === "ArrowDown" && !msg.includes("\n")) { e.preventDefault(); onArrow(1); }
             else if (e.key === "Escape" && busy) { e.preventDefault(); stop(); }
           }}
           style={input}
@@ -287,9 +333,15 @@ const input: CSSProperties = {
   border: "none",
   color: "#e8e9ee",
   fontSize: 13,
+  lineHeight: 1.45,
   padding: "6px 0",
   fontFamily: MONO,
   outline: "none",
+  resize: "none",
+  overflowY: "auto",
+  maxHeight: 140,
+  boxSizing: "border-box", // height=scrollHeight 가 padding 만큼 더 커지지 않도록 (single-line 정렬)
+  display: "block",
 };
 
 const sendBtn: CSSProperties = {

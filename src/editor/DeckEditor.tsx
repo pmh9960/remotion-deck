@@ -11,19 +11,34 @@ import { useDeckStore } from "./useDeckStore.js";
 export const DeckEditor = () => {
   const { deck, update, commit, undo, redo, save, status } = useDeckStore();
   const [sel, setSel] = useState(0);
+  const [railSel, setRailSel] = useState<number[]>([0]); // multi-selected slide indices in the rail
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [playing, setPlaying] = useState(false);
+  // The slide currently shown in the fullscreen player, so closing returns the editor there.
+  const [presentIndex, setPresentIndex] = useState(0);
   const [exportMsg, setExportMsg] = useState("");
   // Resizable panel sizes (px), dragged via the splitters between panels.
   const [railW, setRailW] = useState(208);
   const [panelW, setPanelW] = useState(340);
   const [chatH, setChatH] = useState(260);
   const wheelLock = useRef(0);
+  const clipboard = useRef<SlideJson[]>([]); // copied/cut slides (rail-level clipboard)
 
   // Global shortcuts: arrows page slides when nothing is selected (Canvas nudges the selection
   // otherwise); Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo, Ctrl/Cmd+S save.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // While the fullscreen player is open, Esc exits it and drops the editor onto the slide
+      // that was on screen; SlideDeck owns the in-present arrow/wheel navigation otherwise.
+      if (playing) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setPlaying(false);
+          setSel(presentIndex);
+          setSelectedIds([]);
+        }
+        return;
+      }
       const tag = document.activeElement?.tagName ?? "";
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       const k = e.key.toLowerCase();
@@ -32,10 +47,20 @@ export const DeckEditor = () => {
         const dir = k === "arrowleft" || k === "arrowup" ? -1 : 1;
         setSel((s) => {
           const n = deck ? deck.slides.length : 1;
-          return Math.max(0, Math.min(n - 1, Math.min(s, n - 1) + dir));
+          const next = Math.max(0, Math.min(n - 1, Math.min(s, n - 1) + dir));
+          setRailSel([next]);
+          return next;
         });
         setSelectedIds([]);
         return;
+      }
+      // Slide clipboard / delete (rail level) — only when no canvas element is selected,
+      // so element editing keeps its own Delete/copy semantics.
+      if (selectedIds.length === 0 && deck) {
+        if (k === "delete" || k === "backspace") { e.preventDefault(); deleteSelectedSlides(); return; }
+        if ((e.ctrlKey || e.metaKey) && k === "c") { e.preventDefault(); copySelectedSlides(); return; }
+        if ((e.ctrlKey || e.metaKey) && k === "x") { e.preventDefault(); cutSelectedSlides(); return; }
+        if ((e.ctrlKey || e.metaKey) && k === "v") { e.preventDefault(); pasteSlides(); return; }
       }
       if (!(e.ctrlKey || e.metaKey)) return;
       if (k === "z" && !e.shiftKey) {
@@ -51,7 +76,7 @@ export const DeckEditor = () => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, save, selectedIds, deck]);
+  }, [undo, redo, save, selectedIds, deck, playing, presentIndex, railSel, sel]);
 
   // Load the deck's webfont (config.theme.fontUrl) so a non-system `font` family renders.
   useEffect(() => {
@@ -83,8 +108,23 @@ export const DeckEditor = () => {
     setExportMsg(format === "pdf" ? "exporting PDF…" : "exporting HTML…");
     try {
       const res = await fetch("/__export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ format, deck }) });
-      const data = (await res.json()) as { output?: string; error?: string };
-      setExportMsg(data.output ? `saved ${data.output}` : `export failed: ${data.error ?? "unknown"}`);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setExportMsg(`export failed: ${data.error ?? res.statusText}`);
+      } else {
+        // The server streams the rendered file back; trigger a browser download to the local machine.
+        const blob = await res.blob();
+        const name = res.headers.get("x-remotion-deck-output") ?? (format === "pdf" ? "presentation.pdf" : "presentation.html");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setExportMsg(`downloaded ${name}`);
+      }
     } catch (e) {
       setExportMsg(`export failed: ${String(e)}`);
     }
@@ -160,7 +200,36 @@ export const DeckEditor = () => {
   };
   const withSlides = (slides: SlideJson[], select: number) => {
     update({ ...deck, slides });
-    setSel(Math.max(0, Math.min(select, slides.length - 1)));
+    const s = Math.max(0, Math.min(select, slides.length - 1));
+    setSel(s);
+    setRailSel([s]);
+    setSelectedIds([]);
+  };
+  // Rail selection: plain click = single, Ctrl/⌘ = toggle, Shift = contiguous range from the active.
+  const selectSlide = (i: number, mode: "single" | "toggle" | "range") => {
+    if (mode === "toggle") {
+      setRailSel((s) => (s.includes(i) ? s.filter((x) => x !== i) : [...s, i]));
+    } else if (mode === "range") {
+      const a = Math.min(index, i);
+      const b = Math.max(index, i);
+      setRailSel(Array.from({ length: b - a + 1 }, (_, k) => a + k));
+    } else {
+      setRailSel([i]);
+    }
+    setSel(i);
+    setSelectedIds([]);
+  };
+  // Drag-reorder: move every rail-selected slide (in their current order) to land at `toIndex`.
+  const reorderSlides = (toIndex: number) => {
+    const selSet = new Set(railSel.length ? railSel : [index]);
+    const picked = deck.slides.filter((_, i) => selSet.has(i));
+    const rest = deck.slides.filter((_, i) => !selSet.has(i));
+    let before = 0;
+    for (let i = 0; i < toIndex; i++) if (!selSet.has(i)) before += 1;
+    const slides = [...rest.slice(0, before), ...picked, ...rest.slice(before)];
+    update({ ...deck, slides });
+    setRailSel(picked.map((_, k) => before + k));
+    setSel(before);
     setSelectedIds([]);
   };
   const addSlide = () => {
@@ -191,6 +260,43 @@ export const DeckEditor = () => {
     const [s] = slides.splice(i, 1);
     slides.splice(j, 0, s);
     withSlides(slides, j);
+  };
+  // current rail selection as an index set (falls back to the active slide).
+  const railSet = () => new Set(railSel.length ? railSel : [index]);
+  const copySelectedSlides = () => {
+    const set = railSet();
+    clipboard.current = deck.slides.filter((_, i) => set.has(i)).map((s) => JSON.parse(JSON.stringify(s)));
+  };
+  const deleteSelectedSlides = () => {
+    const set = railSet();
+    const slides = deck.slides.filter((_, i) => !set.has(i));
+    if (!slides.length) return; // never empty the deck
+    withSlides(slides, Math.min(Math.min(...set), slides.length - 1));
+  };
+  const cutSelectedSlides = () => {
+    copySelectedSlides();
+    deleteSelectedSlides();
+  };
+  const pasteSlides = () => {
+    if (!clipboard.current.length) return;
+    const seen = new Set(deck.slides.map((s) => s.id));
+    const freshId = (base: string) => {
+      let id = base, n = 2;
+      while (seen.has(id)) id = `${base}-${n++}`;
+      seen.add(id);
+      return id;
+    };
+    const copies: SlideJson[] = clipboard.current.map((s) => {
+      const c = JSON.parse(JSON.stringify(s)) as SlideJson;
+      c.id = freshId(`${c.id.replace(/-copy(-\d+)?$/, "")}-copy`);
+      return c;
+    });
+    const at = Math.min(index + 1, deck.slides.length);
+    const slides = [...deck.slides.slice(0, at), ...copies, ...deck.slides.slice(at)];
+    update({ ...deck, slides });
+    setSel(at);
+    setRailSel(copies.map((_, k) => at + k));
+    setSelectedIds([]);
   };
 
   return (
@@ -229,14 +335,14 @@ export const DeckEditor = () => {
             {status === "saving" ? "saving…" : status === "draft" ? "draft · ⌘S to save" : "saved"}
           </span>
           {exportMsg && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{exportMsg}</span>}
-          <button onClick={() => doExport("pdf")} title="Export presentation.pdf" style={btn}>⬇ PDF</button>
-          <button onClick={() => doExport("html")} title="Export self-contained presentation.html" style={btn}>⬇ HTML</button>
+          <button onClick={() => doExport("pdf")} title="Download presentation.pdf to your machine" style={btn}>⬇ PDF</button>
+          <button onClick={() => doExport("html")} title="Download self-contained presentation.html to your machine" style={btn}>⬇ HTML</button>
           <button onClick={() => setPlaying(true)} style={{ ...btn, marginLeft: 6 }}>▶ Play</button>
         </div>
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <SlideRail deck={deck} selected={index} width={railW} onSelect={(i) => { setSel(i); setSelectedIds([]); }} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} />
+        <SlideRail deck={deck} selected={index} selectedSet={railSel} width={railW} onSelect={selectSlide} onAdd={addSlide} onDuplicate={duplicateSlide} onDelete={deleteSlide} onMove={moveSlide} onReorder={reorderSlides} />
         <Splitter dir="col" onDrag={(d) => setRailW((w) => clamp(w + d, 120, 480))} />
         <Canvas slide={slide} slideIndex={index} theme={theme} config={config} selectedIds={selectedIds} onSelectIds={setSelectedIds} onChangeSlide={updateSlide} onCommit={commit} onWheelNav={wheelNav} />
         <Splitter dir="col" onDrag={(d) => setPanelW((w) => clamp(w - d, 200, 680))} />
@@ -248,8 +354,8 @@ export const DeckEditor = () => {
 
       {playing && (
         <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }}>
-          <SlideDeck slides={deckFromJson(deck).slides} config={config} initialIndex={index} />
-          <button onClick={() => setPlaying(false)} style={{ ...btn, position: "fixed", top: 16, right: 16, zIndex: 101 }}>✕ Close</button>
+          <SlideDeck slides={deckFromJson(deck, "present").slides} config={config} initialIndex={index} onIndexChange={setPresentIndex} advanceOnClick={false} />
+          <button onClick={() => { setPlaying(false); setSel(presentIndex); setSelectedIds([]); }} style={{ ...btn, position: "fixed", top: 16, right: 16, zIndex: 101 }}>✕ Close (Esc)</button>
         </div>
       )}
     </div>
