@@ -7,13 +7,17 @@ import { chatMiddleware } from "./chatMiddleware.js";
 import { deckMiddleware } from "./deckMiddleware.js";
 import { exportMiddleware } from "./exportMiddleware.js";
 
-const htmlTemplate = (entry: string) => `<!doctype html>
+const htmlTemplate = (entry: string, deckKey: string) => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>remotion-deck</title>
     <style>html,body,#root{height:100%;margin:0;background:#0b0d12;overflow:hidden}</style>
+    <!-- Identifies the deck served on this origin so per-deck client state (e.g. the chat
+         transcript in localStorage) doesn't leak across decks when the same dev server/port is
+         pointed at a different deck. -->
+    <script>window.__REMOTION_DECK_KEY__ = ${JSON.stringify(deckKey)};</script>
   </head>
   <body>
     <div id="root"></div>
@@ -40,7 +44,7 @@ export const createDevServer = async (opts: {
   const appDir = path.join(opts.cwd, ".remotion-deck");
   fs.mkdirSync(appDir, { recursive: true });
   const entry = opts.mode === "present" ? "remotion-deck/present" : "remotion-deck/editor";
-  fs.writeFileSync(path.join(appDir, "index.html"), htmlTemplate(entry));
+  fs.writeFileSync(path.join(appDir, "index.html"), htmlTemplate(entry, path.resolve(opts.deckFile)));
 
   const server = await createServer({
     configFile: false,

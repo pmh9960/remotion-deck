@@ -14,9 +14,15 @@ const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "�
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
 // Persist the transcript so it survives page refreshes (the server's warm Claude process keeps the
-// conversation context across refreshes too, so the session stays continuous). Keyed per origin —
-// one dev server serves one deck, so a single key is fine.
-const LOG_KEY = "remotion-deck:chatlog";
+// conversation context across refreshes too, so the session stays continuous). Keyed PER DECK: the
+// server injects the deck's absolute path as window.__REMOTION_DECK_KEY__, so pointing the same dev
+// server/port at a DIFFERENT deck gets its own chat history instead of inheriting the previous
+// deck's transcript. Falls back to a single key when the global isn't present.
+const DECK_KEY =
+  (typeof window !== "undefined" &&
+    (window as unknown as { __REMOTION_DECK_KEY__?: string }).__REMOTION_DECK_KEY__) ||
+  "default";
+const LOG_KEY = `remotion-deck:chatlog:${DECK_KEY}`;
 const LOG_CAP = 300;
 const loadLog = (): Line[] => {
   try { const v = JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
